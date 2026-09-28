@@ -1,9 +1,10 @@
-public class Defensa extends Jugador{
+package model;
+public class Defensa extends model.Jugador {
     private int cabezazo;
-    public defensa() {
+    public Defensa() {
         super();
     }
-    public defensa(String nombre, int edad, int ovr, double precio, int resistencia, String equipo, int dorsal,
+    public Defensa(String nombre, int edad, int ovr, double precio, int resistencia, String equipo, int dorsal,
                    String posicion, int velocidad, int remate, int fuerza, int pase, int regate, int centros,
                    int marcaje, int definicion, int control, int entradas, int cabezazo) {
         super(nombre, edad, ovr, precio, resistencia, equipo, dorsal, posicion, velocidad, remate,

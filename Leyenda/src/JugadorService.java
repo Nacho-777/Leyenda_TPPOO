@@ -1,6 +1,6 @@
 public interface JugadorService  {
-    void crearJugador(Jugador j);
-    void actualizarJugador(Jugador j);
+    void crearJugador(model.Jugador j);
+    void actualizarJugador(model.Jugador j);
     void eliminarJugador(int id);
     void entrenarJugador(int id);
     void simularTemporada();

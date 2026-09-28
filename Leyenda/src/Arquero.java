@@ -1,12 +1,13 @@
-public class Arquero extends Jugador{
+package model;
+public class Arquero extends model.Jugador{
     private int reflejos;
     private int atajadas;
     private int salida;
     private int juegoConPies;
 
-    public arquero() { super(); }
+    public Arquero() { super(); }
 
-    public arquero(Long id, String nombre, int edad, int ovr, Long equipoId,int reflejos, int atajadas, int salida, int juegoConPies) {
+    public Arquero(Long id, String nombre, int edad, int ovr, Long equipoId,int reflejos, int atajadas, int salida, int juegoConPies) {
 
         this.reflejos = reflejos;
         this.atajadas = atajadas;

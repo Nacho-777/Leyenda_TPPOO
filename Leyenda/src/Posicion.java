@@ -1,2 +1,2 @@
-public class Posicion extends Jugador{
+public class Posicion extends model.Jugador{
 }

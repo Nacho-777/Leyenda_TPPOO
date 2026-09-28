@@ -1,10 +1,12 @@
-
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.Scanner;
+import util.Conexion;
+import java.sql.Connection;
+import java.sql.SQLException;
+
 public class Main {
 
         static class Equipo {
@@ -19,7 +21,16 @@ public class Main {
             }
         }
 
-        public static void main(String[] args) {
+        public static void main (String[]args){
+            //conexionn
+            try (Connection con = Conexion.obtenerConexion()) {
+                System.out.println("¡Conexión exitosa a la base de datos!");
+
+            } catch (SQLException e) {
+                System.out.println("Error al conectar con la base de datos.");
+                e.printStackTrace();
+            }
+
             Scanner sc = new Scanner(System.in);
             Random random = new Random();
 
@@ -54,24 +65,24 @@ public class Main {
 
             String nombrePosicion = obtenerNombrePosicion(opcPos);
 
-            jugador miJugador = null;
+            model.Jugador miJugador = null;
             switch (opcPos) {
                 case 1:
-                    miJugador = new arquero(1L, nombreJugador, 16, 50, 0L, 50, 50, 50, 50);
+                    miJugador = new model.Arquero(1L, nombreJugador, 16, 50, 0L, 50, 50, 50, 50);
                     break;
                 case 2:
                 case 3:
                 case 4:
                 case 5:
-                    miJugador = new defensa(nombreJugador, 16, 50, 500000, 50, "Agente Libre", dorsalJugador, nombrePosicion, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50);
+                    miJugador = new model.Defensa(nombreJugador, 16, 50, 500000, 50, "Agente Libre", dorsalJugador, nombrePosicion, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50);
                     break;
                 case 6:
                 case 7:
                 case 8:
-                    miJugador = new mediocampista(nombreJugador, 16, 50, 500000, 50, "Agente Libre", dorsalJugador, nombrePosicion, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50);
+                    miJugador = new model.Mediocampista(nombreJugador, 16, 50, 500000, 50, "Agente Libre", dorsalJugador, nombrePosicion, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50);
                     break;
                 default:
-                    miJugador = new delantero(nombreJugador, 16, 50, 500000, 50, "Agente Libre", dorsalJugador, nombrePosicion, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50);
+                    miJugador = new model.Delantero(nombreJugador, 16, 50, 500000, 50, "Agente Libre", dorsalJugador, nombrePosicion, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50);
                     break;
             }
 
@@ -161,15 +172,25 @@ public class Main {
         }
 
 
-        private static void actualizarOvrJugador(jugador j, int nuevoOvr) {
+        private static void actualizarOvrJugador (model.Jugador j,int nuevoOvr){
             j.setOvr(nuevoOvr);
         }
-        private static List<Equipo> obtenerOfertasPorOvr(List<Equipo> base, int ovr, String clubActual, Random random) {
+        private static List<Equipo> obtenerOfertasPorOvr (List < Equipo > base,int ovr, String clubActual, Random random)
+        {
             int minTier = 5, maxTier = 5;
-            if (ovr >= 86) { minTier = 1; maxTier = 2; }
-            else if (ovr >= 80) { minTier = 2; maxTier = 3; }
-            else if (ovr >= 72) { minTier = 3; maxTier = 4; }
-            else if (ovr >= 62) { minTier = 4; maxTier = 5; }
+            if (ovr >= 86) {
+                minTier = 1;
+                maxTier = 2;
+            } else if (ovr >= 80) {
+                minTier = 2;
+                maxTier = 3;
+            } else if (ovr >= 72) {
+                minTier = 3;
+                maxTier = 4;
+            } else if (ovr >= 62) {
+                minTier = 4;
+                maxTier = 5;
+            }
 
             List<Equipo> candidatos = new ArrayList<>();
             for (Equipo eq : base) {
@@ -186,7 +207,7 @@ public class Main {
             return seleccionados;
         }
 
-        private static List<Equipo> filtrarEquiposPorPais(List<Equipo> base, String pais) {
+        private static List<Equipo> filtrarEquiposPorPais (List < Equipo > base, String pais){
             List<Equipo> res = new ArrayList<>();
             for (Equipo eq : base) {
                 if (eq.pais.equalsIgnoreCase(pais)) res.add(eq);
@@ -194,7 +215,7 @@ public class Main {
             return res;
         }
 
-        private static String obtenerNombrePosicion(int opc) {
+        private static String obtenerNombrePosicion ( int opc){
             return switch (opc) {
                 case 1 -> "Arquero";
                 case 2 -> "Lateral Derecho";
@@ -212,7 +233,7 @@ public class Main {
         }
 
 
-        private static List<Equipo> cargarEquiposLocales() {
+        private static List<Equipo> cargarEquiposLocales () {
             return new ArrayList<>(Arrays.asList(
                     // Argentina
                     new Equipo("Boca Juniors", "Argentina", 3), new Equipo("River Plate", "Argentina", 3),
@@ -261,4 +282,5 @@ public class Main {
                     new Equipo("Benfica", "Portugal", 2), new Equipo("Porto", "Portugal", 2)
             ));
         }
-}
+    }
+
