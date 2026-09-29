@@ -1,5 +1,6 @@
-package dao.impl;
-import dao.JugadorDAO;
+package model;
+
+import model.JugadorDAO;
 import model.Jugador;
 import model.Arquero;
 import model.Defensa;
@@ -10,8 +11,9 @@ import util.Conexion;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Types;
 
-public class JugadorDaoImpl implements JugadorDAO{
+public class JugadorDaoImpl implements model.JugadorDAO {
 
     @Override
     public void insertar(Jugador jugador) {
@@ -28,6 +30,7 @@ public class JugadorDaoImpl implements JugadorDAO{
         try (Connection con = Conexion.obtenerConexion();
              PreparedStatement ps = con.prepareStatement(sql)) {
 
+            // DATOS GENERALES
             ps.setString(1, jugador.getNombre());
             ps.setInt(2, jugador.getEdad());
             ps.setInt(3, jugador.getOvr());
@@ -37,6 +40,7 @@ public class JugadorDaoImpl implements JugadorDAO{
             ps.setInt(7, jugador.getDorsal());
             ps.setString(8, jugador.getPosicion());
 
+            // ESTADÍSTICAS GENERALES
             ps.setInt(9, jugador.getVelocidad());
             ps.setInt(10, jugador.getRemate());
             ps.setInt(11, jugador.getFuerza());
@@ -48,51 +52,61 @@ public class JugadorDaoImpl implements JugadorDAO{
             ps.setInt(17, jugador.getControl());
             ps.setInt(18, jugador.getEntradas());
 
-            // Valores específicos: por defecto, quedan en NULL.
-            ps.setString(19, null);
-            ps.setObject(20, null);
-            ps.setObject(21, null);
-            ps.setObject(22, null);
-            ps.setObject(23, null);
-            ps.setObject(24, null);
-            ps.setObject(25, null);
-            ps.setObject(26, null);
+            // Por defecto, atributos específicos = NULL
+            ps.setNull(19, Types.VARCHAR);
+            ps.setNull(20, Types.INTEGER);
+            ps.setNull(21, Types.INTEGER);
+            ps.setNull(22, Types.INTEGER);
+            ps.setNull(23, Types.INTEGER);
+            ps.setNull(24, Types.INTEGER);
+            ps.setNull(25, Types.INTEGER);
+            ps.setNull(26, Types.INTEGER);
 
+            // ARQUERO
             if (jugador instanceof Arquero) {
+
                 Arquero arquero = (Arquero) jugador;
 
                 ps.setString(19, "ARQUERO");
-                ps.setObject(23, arquero.getReflejos());
-                ps.setObject(24, arquero.getAtajadas());
-                ps.setObject(25, arquero.getSalida());
-                ps.setObject(26, arquero.getJuegoConPies());
+                ps.setInt(23, arquero.getReflejos());
+                ps.setInt(24, arquero.getAtajadas());
+                ps.setInt(25, arquero.getSalida());
+                ps.setInt(26, arquero.getJuegoConPies());
 
+                // DEFENSA
             } else if (jugador instanceof Defensa) {
+
                 Defensa defensa = (Defensa) jugador;
 
                 ps.setString(19, "DEFENSA");
-                ps.setObject(20, defensa.getCabezazo());
+                ps.setInt(20, defensa.getCabezazo());
 
+                // MEDIOCAMPISTA
             } else if (jugador instanceof Mediocampista) {
+
                 Mediocampista mediocampista = (Mediocampista) jugador;
 
                 ps.setString(19, "MEDIOCAMPISTA");
-                ps.setObject(21, mediocampista.getVision());
-                ps.setObject(22, mediocampista.getRecuperacion());
+                ps.setInt(21, mediocampista.getVision());
+                ps.setInt(22, mediocampista.getRecuperacion());
 
+                // DELANTERO
             } else if (jugador instanceof Delantero) {
+
                 Delantero delantero = (Delantero) jugador;
 
                 ps.setString(19, "DELANTERO");
-                ps.setObject(20, delantero.getCabezazo());
+                ps.setInt(20, delantero.getCabezazo());
 
             } else {
-                throw new IllegalArgumentException("Tipo de jugador no reconocido");
+                throw new IllegalArgumentException(
+                        "Tipo de jugador no reconocido."
+                );
             }
 
             ps.executeUpdate();
 
-            System.out.println("Jugador guardado correctamente.");
+            System.out.println("Jugador guardado correctamente en MySQL.");
 
         } catch (SQLException e) {
             System.out.println("Error al guardar el jugador.");
