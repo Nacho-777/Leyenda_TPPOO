@@ -28,5 +28,6 @@ public interface JugadorService {
             PrecioInvalidoException, ResistenciaInvalidaException, DorsalOcupadoException, SQLException;
     void retirarJugador(int id) throws SQLException;
     void simularTemporada(Jugador jugador, String clubActual, int anio, Random random);
+    ResultadoTemporada simularTemporadaConResultado(Jugador jugador, String clubActual, int anio, Random random);
     void mostrarResumenCarrera(Jugador jugador);
 }

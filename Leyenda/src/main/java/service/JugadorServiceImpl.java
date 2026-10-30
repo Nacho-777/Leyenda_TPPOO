@@ -116,6 +116,11 @@ public class JugadorServiceImpl implements JugadorService {
     }
 
     @Override
+    public ResultadoTemporada simularTemporadaConResultado(Jugador jugador, String clubActual, int anio, Random random) {
+        return estadisticasService.simularTemporadaConResultado(jugador, clubActual, anio, random);
+    }
+
+    @Override
     public void mostrarResumenCarrera(Jugador jugador) {
         estadisticasService.mostrarResumenCarrera(jugador);
     }
