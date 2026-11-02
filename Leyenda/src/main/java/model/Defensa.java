@@ -19,7 +19,6 @@ public class Defensa extends Jugador {
 
     @Override
     public void entrenar() {
-        if (getOvr() < 99) setOvr(getOvr() + 1);
         setMarcaje(mejorarAtributo(getMarcaje()));
         setEntradas(mejorarAtributo(getEntradas()));
         cabezazo = mejorarAtributo(cabezazo);

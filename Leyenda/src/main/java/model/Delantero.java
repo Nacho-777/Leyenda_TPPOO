@@ -19,7 +19,6 @@ public class Delantero extends Jugador {
 
     @Override
     public void entrenar() {
-        if (getOvr() < 99) setOvr(getOvr() + 1);
         setRemate(mejorarAtributo(getRemate()));
         setDefinicion(mejorarAtributo(getDefinicion()));
         cabezazo = mejorarAtributo(cabezazo);

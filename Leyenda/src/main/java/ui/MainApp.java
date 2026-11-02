@@ -279,7 +279,7 @@ public class MainApp extends Application {
         modeCard.getChildren().addAll(
                 sectionHeading("02", "ELEGÍ EL MODO DE SIMULACIÓN", "Esta decisión determina cuántas temporadas avanzan en cada etapa."),
                 modeCards,
-                label("La carrera comienza a los 16 años y termina a los 40. Se simulan las temporadas intermedias según el modo elegido.", "helper-text"));
+                label("La carrera comienza a los 16 años y termina a los 40. Podés desarrollar tu OVR hasta los 29; desde los 30 comienza el declive según tu rendimiento.", "helper-text"));
 
         Button back = secondaryButton("VOLVER");
         back.setOnAction(e -> showHome());
@@ -451,19 +451,43 @@ public class MainApp extends Application {
                 sectionHeading("RENDIMIENTO", "ATRIBUTOS DEL JUGADOR", "Valores actuales de tu futbolista"),
                 attributeRow("Velocidad", jugadorActual.getVelocidad()),
                 attributeRow("Remate", jugadorActual.getRemate()),
+                attributeRow("Definición", jugadorActual.getDefinicion()),
                 attributeRow("Pase", jugadorActual.getPase()),
                 attributeRow("Regate", jugadorActual.getRegate()),
+                attributeRow("Control", jugadorActual.getControl()),
                 attributeRow("Fuerza", jugadorActual.getFuerza()),
+                attributeRow("Marcaje", jugadorActual.getMarcaje()),
+                attributeRow("Entradas", jugadorActual.getEntradas()),
                 attributeRow("Resistencia", jugadorActual.getResistencia()));
 
         VBox actionCard = surfaceCard();
         actionCard.getChildren().addAll(
                 sectionHeading("SIGUIENTE MOVIMIENTO", "PREPARÁ LA ETAPA", "Elegí cómo querés preparar a tu jugador."));
-        ComboBox<String> decision = new ComboBox<>();
-        decision.getItems().addAll("Entrenamiento intensivo", "Descanso y recuperación");
-        decision.setValue("Entrenamiento intensivo");
-        decision.setMaxWidth(Double.MAX_VALUE);
-        actionCard.getChildren().add(field("ENFOQUE DE LA ETAPA", decision));
+        ToggleGroup trainingGroup = new ToggleGroup();
+        GridPane trainingOptions = new GridPane();
+        trainingOptions.setHgap(8);
+        trainingOptions.setVgap(8);
+        List<String> trainingNames = new ArrayList<>(List.of("Velocidad", "Definición", "Pase y visión",
+                "Regate y control", "Fuerza", "Resistencia", "Marcaje y entradas"));
+        if (jugadorActual instanceof Arquero) trainingNames.add("Atajadas");
+        trainingNames.add("Descanso y recuperación");
+        for (int i = 0; i < trainingNames.size(); i++) {
+            ToggleButton option = new ToggleButton(trainingNames.get(i));
+            option.setToggleGroup(trainingGroup);
+            option.setUserData(trainingNames.get(i));
+            option.getStyleClass().add("training-option");
+            option.setMaxWidth(Double.MAX_VALUE);
+            option.setMinHeight(42);
+            GridPane.setHgrow(option, Priority.ALWAYS);
+            trainingOptions.add(option, i % 2, i / 2);
+            if (i == 0) option.setSelected(true);
+        }
+        trainingOptions.setMaxWidth(Double.MAX_VALUE);
+        actionCard.getChildren().addAll(
+                label("ELEGÍ TU ENTRENAMIENTO", "field-label"), trainingOptions,
+                label(edadActual < 30
+                        ? "Cada enfoque mejora atributos diferentes y puede darte +1 OVR. Tu etapa de crecimiento termina a los 29 años."
+                        : "Etapa de veterano: el OVR ya no aumenta. Desde los 30 pierde puntos por temporada según edad y rendimiento.", "helper-text"));
 
         Label simulationInfo = label(
                 "Al avanzar se simularán " + temporadasPorEtapa + " temporada(s), salvo que llegues a los 40 años.",
@@ -473,7 +497,14 @@ public class MainApp extends Application {
         simulate.setMaxWidth(Double.MAX_VALUE);
         simulate.setOnAction(e -> {
             if (edadActual >= 40) showCareerSummary();
-            else simulateStage(decision.getValue());
+            else {
+                ToggleButton selectedTraining = (ToggleButton) trainingGroup.getSelectedToggle();
+                if (selectedTraining == null) {
+                    showAlert(Alert.AlertType.WARNING, "Elegí una opción", "Seleccioná un entrenamiento o descanso antes de avanzar.");
+                    return;
+                }
+                simulateStage((String) selectedTraining.getUserData());
+            }
         });
         actionCard.getChildren().addAll(simulationInfo, simulate);
 
@@ -501,33 +532,21 @@ public class MainApp extends Application {
         if (jugadorActual == null) return;
         try {
             String trainingMessage;
-            if ("Entrenamiento intensivo".equals(decision)) {
-                jugadorService.entrenarJugador(jugadorActual);
-                trainingMessage = "Entrenamiento intensivo: mejoraron los atributos específicos de tu posición.";
-            } else {
-                jugadorActual.setResistencia(Math.min(99, jugadorActual.getResistencia() + 2));
+            if ("Descanso y recuperación".equals(decision)) {
+                jugadorActual.setResistencia(Math.min(99, jugadorActual.getResistencia() + 5));
+                trainingMessage = "Descanso completo: recuperaste 5 puntos de resistencia.";
                 jugadorService.actualizarJugador(jugadorActual);
-                trainingMessage = "Descanso: recuperaste resistencia antes de competir.";
+            } else {
+                trainingMessage = jugadorService.entrenarConEnfoque(jugadorActual, decision);
             }
 
-            String eventMessage;
-            int event = random.nextInt(3);
-            if (event == 0) {
-                int loss = random.nextInt(2) + 1;
-                jugadorActual.setOvr(Math.max(50, jugadorActual.getOvr() - loss));
-                eventMessage = "Evento físico: tu OVR bajó " + loss + " punto(s).";
-            } else if (event == 1) {
-                int gain = random.nextInt(3) + 1;
-                jugadorActual.setOvr(Math.min(99, jugadorActual.getOvr() + gain));
-                eventMessage = "Racha positiva: tu OVR aumentó " + gain + " punto(s).";
-            } else {
-                eventMessage = "Temporada estable: no hubo cambios inesperados.";
-            }
+            String eventMessage = resolverEventoAleatorio();
             jugadorService.actualizarJugador(jugadorActual);
 
             int etapaSimulada = numeroEtapa;
             int cantidad = Math.min(temporadasPorEtapa, 40 - edadActual);
             List<ResultadoTemporada> resultados = new ArrayList<>();
+            List<String> declives = new ArrayList<>();
             for (int i = 0; i < cantidad; i++) {
                 ResultadoTemporada resultado = jugadorService.simularTemporadaConResultado(
                         jugadorActual, clubActual, anioActual, random);
@@ -537,16 +556,65 @@ public class MainApp extends Application {
                 totalAsistencias += resultado.getAsistencias();
                 if (resultado.isCampeon()) totalTitulos++;
                 if (resultado.isBalonOro()) totalBalonesOro++;
+
+                // El rendimiento de ESTA temporada define cuánto se conserva el nivel al envejecer.
+                declives.add(jugadorService.aplicarDeclivePorTemporada(jugadorActual, resultado));
                 anioActual++;
                 edadActual++;
+                jugadorActual.setEdad(edadActual);
             }
 
             jugadorActual.setEdad(edadActual);
+            jugadorActual.setEquipo(clubActual);
             jugadorService.actualizarJugador(jugadorActual);
             numeroEtapa++;
-            showStageResults(resultados, etapaSimulada, trainingMessage, eventMessage);
+            String agingMessage = declives.stream().filter(m -> m.contains("Declive") || m.contains("sobresaliente"))
+                    .reduce((a, b) -> a + " | " + b).orElse("La edad todavía no afecta tu valoración.");
+            showStageResults(resultados, etapaSimulada, trainingMessage, eventMessage + " " + agingMessage);
         } catch (Exception ex) {
             showAlert(Alert.AlertType.ERROR, "No se pudo simular la etapa", safeMessage(ex));
+        }
+    }
+
+    /** Eventos de carrera con efectos reales sobre atributos, resistencia y valoración. */
+    private String resolverEventoAleatorio() {
+        int evento = random.nextInt(7);
+        switch (evento) {
+            case 0 -> {
+                jugadorActual.setVelocidad(Math.min(99, jugadorActual.getVelocidad() + 2));
+                if (edadActual < 30) jugadorActual.setOvr(Math.min(99, jugadorActual.getOvr() + 1));
+                return "🌟 Descubrimiento: una gran actuación llamó la atención. +2 velocidad" + (edadActual < 30 ? " y +1 OVR." : ". El OVR no aumenta después de los 29 años.");
+            }
+            case 1 -> {
+                int perdida = random.nextInt(3) + 2;
+                jugadorActual.setResistencia(Math.max(1, jugadorActual.getResistencia() - perdida));
+                return "🩹 Molestia muscular: perdiste " + perdida + " puntos de resistencia. Vas a necesitar recuperación.";
+            }
+            case 2 -> {
+                jugadorActual.setControl(Math.min(99, jugadorActual.getControl() + 2));
+                jugadorActual.setPase(Math.min(99, jugadorActual.getPase() + 1));
+                return "🎯 Consejo de un referente: mejoraste +2 control y +1 pase.";
+            }
+            case 3 -> {
+                jugadorActual.setFuerza(Math.min(99, jugadorActual.getFuerza() + 2));
+                return "💪 Plan físico personalizado: ganaste +2 fuerza.";
+            }
+            case 4 -> {
+                jugadorActual.setResistencia(Math.min(99, jugadorActual.getResistencia() + 4));
+                return "🔋 Semana de recuperación: recuperaste +4 resistencia.";
+            }
+            case 5 -> {
+                if (edadActual < 30) {
+                    jugadorActual.setOvr(Math.min(99, jugadorActual.getOvr() + 1));
+                    return "📈 Racha de confianza: el entrenador te da más minutos. +1 OVR.";
+                }
+                jugadorActual.setPase(Math.min(99, jugadorActual.getPase() + 1));
+                return "🧠 Experiencia: tu lectura de juego mejora (+1 pase), sin aumentar el OVR.";
+            }
+            default -> {
+                jugadorActual.setRegate(Math.min(99, jugadorActual.getRegate() + 2));
+                return "⚡ Entrenamiento extra: mejoraste +2 regate.";
+            }
         }
     }
 

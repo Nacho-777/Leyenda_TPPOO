@@ -26,7 +26,6 @@ public class Arquero extends Jugador {
 
     @Override
     public void entrenar() {
-        if (getOvr() < 99) setOvr(getOvr() + 1);
         reflejos = mejorarAtributo(reflejos);
         atajadas = mejorarAtributo(atajadas);
         salida = mejorarAtributo(salida);

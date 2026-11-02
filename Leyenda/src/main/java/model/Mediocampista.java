@@ -22,7 +22,6 @@ public class Mediocampista extends Jugador {
 
     @Override
     public void entrenar() {
-        if (getOvr() < 99) setOvr(getOvr() + 1);
         vision = mejorarAtributo(vision);
         recuperacion = mejorarAtributo(recuperacion);
         setPase(mejorarAtributo(getPase()));

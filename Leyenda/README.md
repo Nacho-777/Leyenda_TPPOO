@@ -34,3 +34,12 @@ Proyecto Java organizado con Maven, JDBC/MySQL, capas DAO y Service, CRUD y exce
 - `PrecioInvalidoException`: precio no negativo.
 - `ResistenciaInvalidaException`: resistencia de 1 a 99.
 - `DorsalOcupadoException`: dorsal de 1 a 99 y único en la tabla.
+
+
+## Modo carrera: progresión y eventos
+
+- Los entrenamientos disponibles son velocidad, definición, pase y visión, regate y control, fuerza, resistencia, marcaje y entradas y, para arqueros, atajadas. También se puede elegir descanso.
+- Antes de los 30 años, entrenar puede otorgar +1 OVR. Algunos eventos positivos también pueden impulsar la valoración.
+- Desde los 30 años el OVR nunca aumenta. Cada temporada se aplica un desgaste base y las temporadas de bajo rendimiento pueden acelerar la caída. Una gran temporada ayuda a conservar atributos físicos, pero no elimina el declive del OVR.
+- Los eventos aleatorios incluyen molestias musculares, recuperación, consejos de referentes, planes físicos, entrenamientos extra y rachas de confianza. Cada evento modifica atributos, resistencia o valoración.
+- Los cambios de atributos, edad y OVR se guardan mediante el DAO existente en MySQL.

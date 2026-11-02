@@ -454,3 +454,49 @@
     -fx-background-color: #314b35;
     -fx-background-radius: 10;
 }
+
+
+/* Pulido visual para el panel de desarrollo y las decisiones de carrera. */
+.attribute-progress {
+    -fx-pref-height: 8;
+    -fx-min-height: 8;
+    -fx-max-height: 8;
+}
+.attribute-name {
+    -fx-min-width: 94;
+}
+.event-banner {
+    -fx-wrap-text: true;
+    -fx-line-spacing: 3px;
+}
+.primary-button:pressed {
+    -fx-background-color: #a4df59;
+    -fx-translate-y: 1;
+}
+.secondary-button:pressed {
+    -fx-background-color: #304a35;
+}
+.mode-card:focused, .nav-button:focused, .nav-button-active:focused {
+    -fx-border-color: #b8f36b;
+}
+
+.training-option {
+    -fx-background-color: #0d1a12;
+    -fx-text-fill: #aebdaf;
+    -fx-border-color: #304638;
+    -fx-border-radius: 8;
+    -fx-background-radius: 8;
+    -fx-padding: 11 8 11 8;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+}
+.training-option:hover {
+    -fx-background-color: #1a2c1e;
+    -fx-text-fill: #eff8ed;
+}
+.training-option:selected {
+    -fx-background-color: #29452b;
+    -fx-text-fill: #c7fa8a;
+    -fx-border-color: #a8e96a;
+}

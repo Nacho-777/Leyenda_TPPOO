@@ -79,6 +79,79 @@ public class JugadorServiceImpl implements JugadorService {
         }
     }
 
+    /** Entrenamiento elegido por el usuario. El OVR solo puede crecer antes de los 30 años. */
+    public String entrenarConEnfoque(Jugador jugador, String enfoque) throws Exception {
+        if (jugador == null) throw new IllegalArgumentException("No hay un jugador activo.");
+        String opcion = enfoque == null ? "" : enfoque.trim().toLowerCase(Locale.ROOT);
+        switch (opcion) {
+            case "velocidad" -> jugador.setVelocidad(Math.min(99, jugador.getVelocidad() + 2));
+            case "definición" -> {
+                jugador.setRemate(Math.min(99, jugador.getRemate() + 1));
+                jugador.setDefinicion(Math.min(99, jugador.getDefinicion() + 2));
+            }
+            case "pase y visión" -> {
+                jugador.setPase(Math.min(99, jugador.getPase() + 2));
+                jugador.setControl(Math.min(99, jugador.getControl() + 1));
+                if (jugador instanceof Mediocampista m) m.setVision(Math.min(99, m.getVision() + 2));
+            }
+            case "regate y control" -> {
+                jugador.setRegate(Math.min(99, jugador.getRegate() + 2));
+                jugador.setControl(Math.min(99, jugador.getControl() + 1));
+            }
+            case "fuerza" -> jugador.setFuerza(Math.min(99, jugador.getFuerza() + 2));
+            case "resistencia" -> jugador.setResistencia(Math.min(99, jugador.getResistencia() + 3));
+            case "marcaje y entradas" -> {
+                jugador.setMarcaje(Math.min(99, jugador.getMarcaje() + 2));
+                jugador.setEntradas(Math.min(99, jugador.getEntradas() + 2));
+            }
+            case "atajadas" -> {
+                if (jugador instanceof Arquero a) {
+                    a.setReflejos(Math.min(99, a.getReflejos() + 2));
+                    a.setAtajadas(Math.min(99, a.getAtajadas() + 2));
+                } else {
+                    jugador.setControl(Math.min(99, jugador.getControl() + 1));
+                    jugador.setFuerza(Math.min(99, jugador.getFuerza() + 1));
+                }
+            }
+            default -> throw new IllegalArgumentException("Elegí un enfoque de entrenamiento válido.");
+        }
+        String mensaje;
+        if (jugador.getEdad() < 30 && jugador.getOvr() < 99) {
+            jugador.setOvr(Math.min(99, jugador.getOvr() + 1));
+            mensaje = "Entrenamiento de " + enfoque + ": mejoraron tus atributos y ganaste +1 OVR.";
+        } else {
+            mensaje = "Entrenamiento de " + enfoque + ": mejoraron tus atributos. A partir de los 30, el OVR ya no aumenta.";
+        }
+        if (jugador.getId() > 0) actualizarJugador(jugador);
+        return mensaje;
+    }
+
+    /** Aplica envejecimiento anual. Desde los 30 el OVR nunca aumenta y cae según edad y rendimiento. */
+    public String aplicarDeclivePorTemporada(Jugador jugador, ResultadoTemporada resultado) throws Exception {
+        if (jugador == null || resultado == null) return "";
+        int edad = jugador.getEdad();
+        if (edad < 30) return "Etapa de desarrollo: todavía podés seguir creciendo.";
+        int participacion = resultado.getPartidos();
+        int produccion = resultado.getGoles() + resultado.getAsistencias();
+        boolean arquero = jugador.getPosicion().toLowerCase(Locale.ROOT).contains("arquero");
+        boolean granTemporada = participacion >= 38 && (arquero || produccion >= 12);
+        boolean temporadaBaja = participacion < 25 || (!arquero && produccion <= 3);
+        int perdida = edad >= 36 ? 2 : 1;
+        if (temporadaBaja) perdida++;
+        // Incluso una gran temporada ya no permite subir el OVR: como máximo amortigua el desgaste físico.
+        if (granTemporada && edad <= 32) perdida = 1;
+        if (edad >= 39) perdida = Math.max(1, perdida);
+        jugador.setOvr(Math.max(1, jugador.getOvr() - perdida));
+        // El desgaste físico se refleja también en atributos que dependen de explosividad y recuperación.
+        if (edad >= 32 && !granTemporada) {
+            jugador.setVelocidad(Math.max(1, jugador.getVelocidad() - 1));
+            jugador.setResistencia(Math.max(1, jugador.getResistencia() - 1));
+        }
+        if (jugador.getId() > 0) actualizarJugador(jugador);
+        if (perdida == 0) return "Temporada sobresaliente: mantuviste tu OVR pese al paso de los años.";
+        return "Declive por edad (" + edad + " años): -" + perdida + " OVR" + (temporadaBaja ? " por bajo rendimiento." : ".");
+    }
+
     @Override
     public void tomarDecision(int id, String decision) throws EdadInvalidaException, OvrInvalidoException,
             PrecioInvalidoException, ResistenciaInvalidaException, DorsalOcupadoException, SQLException {
@@ -97,6 +170,9 @@ public class JugadorServiceImpl implements JugadorService {
     public void subirOVR(int id, int puntos) throws EdadInvalidaException, OvrInvalidoException,
             PrecioInvalidoException, ResistenciaInvalidaException, DorsalOcupadoException, SQLException {
         Jugador jugador = exigirJugador(id);
+        if (puntos > 0 && jugador.getEdad() >= 30) {
+            throw new OvrInvalidoException("A partir de los 30 años el OVR ya no puede aumentar.");
+        }
         int nuevoOvr = jugador.getOvr() + puntos;
         if (nuevoOvr < 1 || nuevoOvr > 99) {
             throw new OvrInvalidoException("El OVR resultante debe permanecer entre 1 y 99.");
