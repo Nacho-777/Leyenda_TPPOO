@@ -1,3 +1,6 @@
+CREATE DATABASE IF NOT EXISTS leyenda CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
+USE leyenda;
+
 -- phpMyAdmin SQL Dump
 -- version 5.2.1
 -- https://www.phpmyadmin.net/
@@ -114,3 +117,39 @@ COMMIT;
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
 /*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+
+
+-- Clubes participantes de la Primera División argentina 2026.
+-- El campo tier guarda la reputación interna usada por el modo carrera (1 a 5).
+INSERT INTO equipos (id, nombre, pais, tier) VALUES
+(1, 'Aldosivi', 'Argentina', '2'),
+(2, 'Argentinos Juniors', 'Argentina', '3'),
+(3, 'Atlético Tucumán', 'Argentina', '3'),
+(4, 'Banfield', 'Argentina', '3'),
+(5, 'Barracas Central', 'Argentina', '2'),
+(6, 'Belgrano', 'Argentina', '3'),
+(7, 'Boca Juniors', 'Argentina', '5'),
+(8, 'Central Córdoba', 'Argentina', '2'),
+(9, 'Defensa y Justicia', 'Argentina', '3'),
+(10, 'Deportivo Riestra', 'Argentina', '2'),
+(11, 'Estudiantes de La Plata', 'Argentina', '4'),
+(12, 'Estudiantes de Río Cuarto', 'Argentina', '2'),
+(13, 'Gimnasia de La Plata', 'Argentina', '3'),
+(14, 'Gimnasia de Mendoza', 'Argentina', '2'),
+(15, 'Huracán', 'Argentina', '3'),
+(16, 'Independiente', 'Argentina', '4'),
+(17, 'Independiente Rivadavia', 'Argentina', '3'),
+(18, 'Instituto', 'Argentina', '3'),
+(19, 'Lanús', 'Argentina', '3'),
+(20, 'Newell''s Old Boys', 'Argentina', '3'),
+(21, 'Platense', 'Argentina', '2'),
+(22, 'Racing Club', 'Argentina', '4'),
+(23, 'River Plate', 'Argentina', '5'),
+(24, 'Rosario Central', 'Argentina', '4'),
+(25, 'San Lorenzo', 'Argentina', '4'),
+(26, 'Sarmiento', 'Argentina', '2'),
+(27, 'Talleres', 'Argentina', '4'),
+(28, 'Tigre', 'Argentina', '3'),
+(29, 'Unión', 'Argentina', '3'),
+(30, 'Vélez Sarsfield', 'Argentina', '4')
+ON DUPLICATE KEY UPDATE nombre=VALUES(nombre), pais=VALUES(pais), tier=VALUES(tier);

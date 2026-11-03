@@ -6,12 +6,13 @@ import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
-import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.ProgressBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TableColumn;
@@ -19,8 +20,10 @@ import javafx.scene.control.TableView;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
+import javafx.scene.image.Image;
+import javafx.scene.image.ImageView;
 import javafx.scene.layout.BorderPane;
-import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -30,26 +33,39 @@ import javafx.scene.layout.VBox;
 import javafx.scene.shape.Circle;
 import javafx.stage.Stage;
 import model.Arquero;
+import model.ClubInfo;
 import model.Defensa;
 import model.Delantero;
 import model.Jugador;
 import model.Mediocampista;
+import model.OfertaTransferencia;
+import model.ResultadoCompeticion;
+import service.ClubesService;
+import service.CompeticionesService;
 import service.JugadorServiceImpl;
+import service.MercadoPasesService;
 import service.ResultadoTemporada;
 
 import java.sql.SQLException;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 
-/** Interfaz JavaFX del modo carrera Leyenda. */
+/** Interfaz JavaFX de Leyenda: modo carrera, mercado y competiciones. */
 public class MainApp extends Application {
 
     private static final String CSS = "/styles/leyenda.css";
-    private static final String CLUB_INICIAL = "Boca Juniors";
+    private static final int EDAD_INICIO = 16;
+    private static final int EDAD_RETIRO = 40;
 
     private final JugadorServiceImpl jugadorService = new JugadorServiceImpl();
+    private final ClubesService clubesService = new ClubesService();
+    private final MercadoPasesService mercadoService = new MercadoPasesService(clubesService);
+    private final CompeticionesService competicionesService = new CompeticionesService();
     private final Random random = new Random();
+    private final NumberFormat moneda = NumberFormat.getCurrencyInstance(new Locale("es", "AR"));
 
     private Stage stage;
     private Jugador jugadorActual;
@@ -57,7 +73,7 @@ public class MainApp extends Application {
     private String dificultadActual = "NORMAL";
     private int temporadasPorEtapa = 2;
     private int anioActual = 2026;
-    private int edadActual = 16;
+    private int edadActual = EDAD_INICIO;
     private int numeroEtapa = 1;
 
     private int totalPartidos;
@@ -65,62 +81,91 @@ public class MainApp extends Application {
     private int totalAsistencias;
     private int totalTitulos;
     private int totalBalonesOro;
+    private final List<ResultadoCompeticion> historialCompeticiones = new ArrayList<>();
+    private List<OfertaTransferencia> ofertasActuales = new ArrayList<>();
+    private String ultimoMovimientoMercado = "Todavía no realizaste transferencias.";
 
     @Override
     public void start(Stage primaryStage) {
         stage = primaryStage;
         stage.setTitle("LEYENDA | Modo Carrera");
-        stage.setMinWidth(1120);
+        stage.setMinWidth(1180);
         stage.setMinHeight(760);
+        stage.setWidth(1440);
+        stage.setHeight(900);
         showHome();
         stage.show();
     }
 
     // ---------------------------------------------------------------------
-    // INICIO Y NAVEGACIÓN
+    // NAVEGACIÓN Y MENÚ PRINCIPAL
     // ---------------------------------------------------------------------
 
     private void showHome() {
         BorderPane shell = createShell("INICIO");
         VBox page = pageContent();
-        page.getChildren().add(topBar("CENTRO DE CARRERA", "TEMPORADA 2026"));
+        page.getChildren().add(topBar("CENTRO DE CARRERA", "TEMPORADA " + anioActual));
 
         HBox hero = new HBox(28);
         hero.getStyleClass().add("hero-panel");
-        hero.setPadding(new Insets(38));
+        hero.setPadding(new Insets(36));
         hero.setAlignment(Pos.CENTER_LEFT);
 
-        VBox copy = new VBox(17);
-        copy.setMaxWidth(590);
-        Label eyebrow = label("EL COMIENZO DE UNA HISTORIA", "eyebrow");
-        Label headline = label("NACISTE PARA\nDEJAR TU MARCA.", "hero-title");
-        Label description = label(
-                "Construí tu carrera desde cero. Elegí tu posición, definí tu camino y convertite en una leyenda del fútbol.",
-                "hero-description");
-        description.setWrapText(true);
-        Button newCareer = primaryButton("CREAR NUEVA CARRERA  →");
-        newCareer.setOnAction(e -> showCreatePlayer());
-        Button savedPlayers = secondaryButton("MIS FUTBOLISTAS");
-        savedPlayers.setOnAction(e -> showSavedPlayers());
-        HBox actions = new HBox(12, newCareer, savedPlayers);
-        copy.getChildren().addAll(eyebrow, headline, description, actions);
+        VBox copy = new VBox(16);
+        copy.setMaxWidth(650);
+        copy.getChildren().addAll(
+                label("MODO CARRERA · FÚTBOL ARGENTINO", "eyebrow"),
+                label("TU HISTORIA.\nTU CAMISETA.\nTU LEYENDA.", "hero-title"),
+                label("Empezá desde las inferiores, ganate un lugar, buscá títulos y llevá tu carrera desde el fútbol argentino hasta América.", "hero-description"));
+        Label modeInfo = pill(jugadorActual == null
+                ? "NUEVA CARRERA DISPONIBLE"
+                : "CARRERA ACTIVA · " + jugadorActual.getNombre().toUpperCase(Locale.ROOT));
+        Button create = primaryButton(jugadorActual == null ? "EMPEZAR MI CARRERA  →" : "CREAR OTRA CARRERA  →");
+        create.setOnAction(e -> showCreatePlayer());
+        Button continueCareer = secondaryButton("CONTINUAR CARRERA");
+        continueCareer.setDisable(jugadorActual == null);
+        continueCareer.setOnAction(e -> showDashboard());
+        copy.getChildren().addAll(modeInfo, new HBox(12, create, continueCareer));
         HBox.setHgrow(copy, Priority.ALWAYS);
 
-        StackPane visual = createHeroVisual();
-        visual.setMinWidth(280);
-        visual.setPrefWidth(340);
-        hero.getChildren().addAll(copy, visual);
+        StackPane art = new StackPane();
+        art.getStyleClass().add("hero-art");
+        art.setMinSize(300, 290);
+        art.setPrefSize(360, 290);
+        Circle outer = new Circle(116);
+        outer.getStyleClass().add("hero-orbit");
+        Circle inner = new Circle(87);
+        inner.getStyleClass().add("hero-ball");
+        VBox emblem = new VBox(3,
+                label("LPF", "hero-art-caption"),
+                label("30", "hero-art-number"),
+                label("CLUBES · 2026", "hero-art-caption"));
+        emblem.setAlignment(Pos.CENTER);
+        Label season = label("TEMPORADA 2026", "hero-year");
+        art.getChildren().addAll(outer, inner, emblem, season);
+        hero.getChildren().addAll(copy, art);
 
-        HBox sectionHeader = new HBox();
-        sectionHeader.setAlignment(Pos.CENTER_LEFT);
-        sectionHeader.getChildren().addAll(
-                label("TU CAMINO EMPIEZA CON TRES DECISIONES", "section-title"));
+        HBox stats = new HBox(14,
+                metricCard("CLUBES", "30", "Primera División 2026"),
+                metricCard("COPAS", "2", "Libertadores y Sudamericana"),
+                metricCard("OBJETIVO", "99", "OVR máximo"),
+                metricCard("CARRERA", "16–40", "años de trayectoria"));
 
-        HBox featureCards = new HBox(14,
-                featureCard("01", "CREÁ TU PERFIL", "Nombre, dorsal, posición y club de debut.", "user-round-plus"),
-                featureCard("02", "ELEGÍ TU RITMO", "Temporada a temporada, cada 2 o cada 4.", "calendar-days"),
-                featureCard("03", "ESCRIBÍ TU HISTORIA", "Entrená, competí y acumulá estadísticas.", "trophy"));
-        page.getChildren().addAll(hero, sectionHeader, featureCards);
+        VBox clubSection = surfaceCard();
+        clubSection.getChildren().addAll(
+                sectionHeading("LPF 2026", "LOS 30 CLUBES DE PRIMERA", "Elegí tu club de debut o buscá nuevas oportunidades en el mercado."));
+        FlowPane clubGrid = new FlowPane(10, 10);
+        clubGrid.setPrefWrapLength(870);
+        for (ClubInfo club : clubesService.listarTodos()) {
+            clubGrid.getChildren().add(clubMiniCard(club));
+        }
+        clubSection.getChildren().add(clubGrid);
+
+        HBox shortcuts = new HBox(14,
+                shortcutCard("MERCADO DE PASES", "Recibí ofertas y cambiá de club.", "ABRIR MERCADO", this::showTransfers),
+                shortcutCard("COMPETICIONES", "Apertura, Clausura, Copa Argentina y torneos continentales.", "VER COMPETICIONES", this::showCompetitions),
+                shortcutCard("MIS FUTBOLISTAS", "Consultá los jugadores guardados en MySQL.", "VER PLANTEL", this::showSavedPlayers));
+        page.getChildren().addAll(hero, stats, clubSection, shortcuts);
         setPage(shell, page);
     }
 
@@ -132,37 +177,39 @@ public class MainApp extends Application {
     }
 
     private VBox createSidebar(String active) {
-        VBox sidebar = new VBox(12);
+        VBox sidebar = new VBox(10);
         sidebar.getStyleClass().add("sidebar");
-        sidebar.setPadding(new Insets(26, 17, 22, 17));
-        sidebar.setPrefWidth(224);
-        sidebar.setMinWidth(224);
+        sidebar.setPadding(new Insets(24, 16, 20, 16));
+        sidebar.setPrefWidth(232);
+        sidebar.setMinWidth(232);
 
-        HBox brand = new HBox(11);
+        HBox brand = new HBox(10);
         brand.setAlignment(Pos.CENTER_LEFT);
         StackPane mark = new StackPane();
         mark.getStyleClass().add("brand-mark");
-        Label markText = label("L", "brand-mark-text");
-        mark.getChildren().add(markText);
+        mark.getChildren().add(label("L", "brand-mark-text"));
         VBox brandCopy = new VBox(1,
                 label("LEYENDA", "brand-name"),
-                label("PLAYER CAREER", "brand-caption"));
+                label("PLAYER CAREER MODE", "brand-caption"));
         brand.getChildren().addAll(mark, brandCopy);
 
-        Label menuTitle = label("MENÚ PRINCIPAL", "sidebar-section");
+        Label menuTitle = label("TU CARRERA", "sidebar-section");
         Button home = navButton("⌂", "Inicio", "INICIO".equals(active), this::showHome);
         Button create = navButton("＋", "Nueva carrera", "NUEVA".equals(active), this::showCreatePlayer);
+        Button career = navButton("▣", "Mi futbolista", "CARRERA".equals(active), this::showDashboard);
+        Button market = navButton("⇄", "Mercado de pases", "MERCADO".equals(active), this::showTransfers);
+        Button cups = navButton("♜", "Competiciones", "COMPETICIONES".equals(active), this::showCompetitions);
         Button saved = navButton("▤", "Mis futbolistas", "JUGADORES".equals(active), this::showSavedPlayers);
 
         Region spacer = new Region();
         VBox.setVgrow(spacer, Priority.ALWAYS);
-        VBox footer = new VBox(7);
-        footer.getStyleClass().add("sidebar-footer");
-        footer.getChildren().addAll(
-                label("LEYENDA  /  BUILD 1.0", "sidebar-caption"),
-                label("Carrera de futbolista", "sidebar-footer-title"),
-                label("JavaFX  ·  MySQL", "sidebar-caption"));
-        sidebar.getChildren().addAll(brand, gap(22), menuTitle, home, create, saved, spacer, footer);
+        VBox status = new VBox(6);
+        status.getStyleClass().add("sidebar-footer");
+        status.getChildren().addAll(
+                label("TEMPORADA " + anioActual, "sidebar-caption"),
+                label(jugadorActual == null ? "Sin carrera activa" : clubActual, "sidebar-footer-title"),
+                label(jugadorActual == null ? "Creá tu primer jugador" : jugadorActual.getNombre(), "sidebar-caption"));
+        sidebar.getChildren().addAll(brand, gap(22), menuTitle, home, create, career, market, cups, saved, spacer, status);
         return sidebar;
     }
 
@@ -171,7 +218,15 @@ public class MainApp extends Application {
         button.getStyleClass().add(selected ? "nav-button-active" : "nav-button");
         button.setMaxWidth(Double.MAX_VALUE);
         button.setAlignment(Pos.CENTER_LEFT);
-        button.setOnAction(e -> action.run());
+        button.setOnAction(e -> {
+            if ((text.equals("Mi futbolista") || text.equals("Mercado de pases") || text.equals("Competiciones"))
+                    && jugadorActual == null) {
+                showAlert(Alert.AlertType.INFORMATION, "Todavía no hay carrera", "Primero creá un futbolista para acceder a esta sección.");
+                showCreatePlayer();
+                return;
+            }
+            action.run();
+        });
         return button;
     }
 
@@ -181,16 +236,16 @@ public class MainApp extends Application {
         scroll.getStyleClass().add("page-scroll");
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         shell.setCenter(scroll);
-        Scene scene = new Scene(shell, 1280, 840);
+        Scene scene = new Scene(shell, 1400, 900);
         var stylesheet = getClass().getResource(CSS);
         if (stylesheet != null) scene.getStylesheets().add(stylesheet.toExternalForm());
         stage.setScene(scene);
     }
 
     private VBox pageContent() {
-        VBox page = new VBox(22);
+        VBox page = new VBox(21);
         page.getStyleClass().add("page-content");
-        page.setPadding(new Insets(28, 34, 36, 34));
+        page.setPadding(new Insets(27, 32, 34, 32));
         return page;
     }
 
@@ -200,90 +255,69 @@ public class MainApp extends Application {
         VBox titles = new VBox(4,
                 label(title, "topbar-title"),
                 label("LEYENDA  /  PLAYER CAREER", "topbar-subtitle"));
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox.setHgrow(titles, Priority.ALWAYS);
         Label tag = label(rightText, "topbar-tag");
-        bar.getChildren().addAll(titles, spacer, tag);
+        bar.getChildren().addAll(titles, tag);
         return bar;
     }
 
-    private StackPane createHeroVisual() {
-        StackPane art = new StackPane();
-        art.getStyleClass().add("hero-art");
-        Circle outer = new Circle(112);
-        outer.getStyleClass().add("hero-orbit");
-        Circle inner = new Circle(84);
-        inner.getStyleClass().add("hero-ball");
-        VBox badge = new VBox(1,
-                label("OVR", "hero-art-caption"),
-                label("50", "hero-art-number"),
-                label("THE JOURNEY", "hero-art-caption"));
-        badge.setAlignment(Pos.CENTER);
-        StackPane.setAlignment(badge, Pos.CENTER);
-        art.getChildren().addAll(outer, inner, badge,
-                label("2026", "hero-year"));
-        return art;
-    }
-
     // ---------------------------------------------------------------------
-    // CREACIÓN DE CARRERA: INCLUYE LOS TRES MODOS DE SIMULACIÓN
+    // CREACIÓN DE JUGADOR Y MODO DE SIMULACIÓN
     // ---------------------------------------------------------------------
 
     private void showCreatePlayer() {
         BorderPane shell = createShell("NUEVA");
         VBox page = pageContent();
-        page.getChildren().add(topBar("CREAR FUTBOLISTA", "NUEVA CARRERA"));
+        page.getChildren().add(topBar("CREACIÓN DE FUTBOLISTA", "NUEVO CONTRATO"));
         page.getChildren().addAll(
-                label("TU PRIMER CONTRATO", "eyebrow"),
-                label("Empezá desde cero.", "page-title"),
-                label("Elegí quién sos dentro de la cancha y cómo querés vivir tu carrera.", "page-subtitle"));
+                label("EL PRIMER PASO", "eyebrow"),
+                label("Construí tu propio camino.", "page-title"),
+                label("Elegí tu identidad, tu club de debut y el ritmo de tu carrera profesional.", "page-subtitle"));
 
         TextField nombre = new TextField();
-        nombre.setPromptText("Nombre y apellido");
+        nombre.setPromptText("Ej. Ignacio Gutiérrez");
         TextField dorsal = new TextField("10");
-        dorsal.setPromptText("1 - 99");
+        dorsal.setPromptText("1 a 99");
 
         ComboBox<String> posicion = new ComboBox<>();
-        posicion.getItems().addAll(
-                "Arquero", "Lateral Derecho", "Central Derecho", "Central Izquierdo",
+        posicion.getItems().addAll("Arquero", "Lateral Derecho", "Central Derecho", "Central Izquierdo",
                 "Lateral Izquierdo", "Mediocampista", "Volante Derecho", "Volante Izquierdo",
                 "Extremo Derecho", "Delantero Centro", "Extremo Izquierdo");
         posicion.setValue("Extremo Derecho");
         posicion.setMaxWidth(Double.MAX_VALUE);
 
-        ComboBox<String> club = new ComboBox<>();
-        club.getItems().addAll("Boca Juniors", "River Plate", "Racing Club", "Independiente", "San Lorenzo");
-        club.setValue(CLUB_INICIAL);
+        ComboBox<ClubInfo> club = new ComboBox<>(FXCollections.observableArrayList(clubesService.listarTodos()));
+        club.setValue(clubesService.buscarPorNombre("Boca Juniors").orElse(clubesService.listarTodos().get(0)));
         club.setMaxWidth(Double.MAX_VALUE);
+        club.setCellFactory(list -> clubCell());
+        club.setButtonCell(clubCell());
+        HBox clubPreview = new HBox(14);
+        clubPreview.getStyleClass().add("club-preview");
+        clubPreview.setAlignment(Pos.CENTER_LEFT);
+        updateClubPreview(clubPreview, club.getValue());
+        club.valueProperty().addListener((obs, oldValue, newValue) -> updateClubPreview(clubPreview, newValue));
 
-        HBox row1 = new HBox(16,
-                field("NOMBRE DEL JUGADOR", nombre),
-                field("NÚMERO DE CAMISETA", dorsal));
-        HBox row2 = new HBox(16,
-                field("POSICIÓN", posicion),
-                field("CLUB DE DEBUT", club));
-
-        VBox profileCard = surfaceCard();
-        profileCard.getChildren().addAll(
-                sectionHeading("01", "DATOS DEL FUTBOLISTA", "Tu identidad dentro del campo"),
-                row1, row2);
+        VBox dataCard = surfaceCard();
+        dataCard.getChildren().addAll(
+                sectionHeading("01", "PERFIL DEL FUTBOLISTA", "Nombre, camiseta y puesto dentro del campo."),
+                new HBox(14, field("NOMBRE Y APELLIDO", nombre), field("DORSAL", dorsal)),
+                new HBox(14, field("POSICIÓN", posicion), field("CLUB DE DEBUT", club)),
+                clubPreview);
 
         ToggleGroup modeGroup = new ToggleGroup();
-        ToggleButton hard = modeButton(modeGroup, "DIFÍCIL", "1 temporada por etapa", "24 etapas · máximo desafío", 1);
+        ToggleButton hard = modeButton(modeGroup, "DIFÍCIL", "1 temporada por etapa", "24 etapas · cada año cuenta", 1);
         ToggleButton normal = modeButton(modeGroup, "NORMAL", "2 temporadas por etapa", "12 etapas · ritmo equilibrado", 2);
         ToggleButton easy = modeButton(modeGroup, "FÁCIL", "4 temporadas por etapa", "6 etapas · progreso rápido", 4);
         normal.setSelected(true);
-        HBox modeCards = new HBox(14, hard, normal, easy);
-
         VBox modeCard = surfaceCard();
         modeCard.getChildren().addAll(
-                sectionHeading("02", "ELEGÍ EL MODO DE SIMULACIÓN", "Esta decisión determina cuántas temporadas avanzan en cada etapa."),
-                modeCards,
-                label("La carrera comienza a los 16 años y termina a los 40. Podés desarrollar tu OVR hasta los 29; desde los 30 comienza el declive según tu rendimiento.", "helper-text"));
+                sectionHeading("02", "ELEGÍ EL MODO DE SIMULACIÓN", "La dificultad define cuántas temporadas avanzan cada vez que continuás."),
+                new HBox(13, hard, normal, easy),
+                label("La carrera comienza a los 16 años y termina a los 40. El crecimiento de OVR se concentra en la etapa joven; el rendimiento y el entrenamiento ayudan a sostener el nivel.", "helper-text"));
 
-        Button back = secondaryButton("VOLVER");
+        Button back = secondaryButton("VOLVER AL INICIO");
         back.setOnAction(e -> showHome());
-        Button create = primaryButton("CREAR FUTBOLISTA Y COMENZAR  →");
+        Button create = primaryButton("FIRMAR PRIMER CONTRATO  →");
         create.setOnAction(e -> {
             ToggleButton selected = (ToggleButton) modeGroup.getSelectedToggle();
             int seasons = selected == null ? 2 : (Integer) selected.getUserData();
@@ -292,9 +326,33 @@ public class MainApp extends Application {
         });
         HBox actions = new HBox(12, back, create);
         actions.setAlignment(Pos.CENTER_RIGHT);
-
-        page.getChildren().addAll(profileCard, modeCard, actions);
+        page.getChildren().addAll(dataCard, modeCard, actions);
         setPage(shell, page);
+    }
+
+    private ListCell<ClubInfo> clubCell() {
+        return new ListCell<>() {
+            @Override protected void updateItem(ClubInfo item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setGraphic(null);
+                } else {
+                    setText(item.getNombre());
+                    setGraphic(clubLogo(item, 32));
+                    setContentDisplay(ContentDisplay.LEFT);
+                }
+            }
+        };
+    }
+
+    private void updateClubPreview(HBox preview, ClubInfo club) {
+        preview.getChildren().clear();
+        if (club == null) return;
+        VBox names = new VBox(3,
+                label(club.getNombre(), "club-preview-name"),
+                label(club.getProvincia() + "  ·  Reputación " + club.getReputacion() + "/5", "club-preview-subtitle"));
+        preview.getChildren().addAll(clubLogo(club, 58), names);
     }
 
     private ToggleButton modeButton(ToggleGroup group, String title, String line1, String line2, int seasons) {
@@ -303,19 +361,17 @@ public class MainApp extends Application {
         button.setUserData(seasons);
         button.getStyleClass().add("mode-card");
         VBox content = new VBox(8,
-                label(title, "mode-title"),
-                label(line1, "mode-main"),
-                label(line2, "mode-detail"));
+                label(title, "mode-title"), label(line1, "mode-main"), label(line2, "mode-detail"));
         content.setAlignment(Pos.CENTER_LEFT);
         button.setGraphic(content);
         button.setText("");
         button.setMaxWidth(Double.MAX_VALUE);
-        button.setMinHeight(126);
+        button.setMinHeight(128);
         HBox.setHgrow(button, Priority.ALWAYS);
         return button;
     }
 
-    private void savePlayer(String nombreTexto, String dorsalTexto, String posicion, String club,
+    private void savePlayer(String nombreTexto, String dorsalTexto, String posicion, ClubInfo club,
                             String dificultad, int temporadas) {
         String nombre = nombreTexto == null ? "" : nombreTexto.trim();
         if (nombre.isBlank()) {
@@ -326,29 +382,30 @@ public class MainApp extends Application {
             showAlert(Alert.AlertType.WARNING, "Datos incompletos", "Seleccioná una posición y un club.");
             return;
         }
-
         try {
             int numeroDorsal = Integer.parseInt(dorsalTexto.trim());
             if (numeroDorsal < 1 || numeroDorsal > 99) {
                 showAlert(Alert.AlertType.WARNING, "Dorsal inválido", "El dorsal debe estar entre 1 y 99.");
                 return;
             }
-
-            Jugador nuevo = crearJugador(nombre, numeroDorsal, posicion, club);
+            Jugador nuevo = crearJugador(nombre, numeroDorsal, posicion, club.getNombre());
             int id = jugadorService.crearJugador(nuevo);
             nuevo.setId(id);
 
             jugadorActual = nuevo;
-            clubActual = club;
+            clubActual = club.getNombre();
             dificultadActual = dificultad;
             temporadasPorEtapa = temporadas;
             anioActual = 2026;
-            edadActual = 16;
+            edadActual = EDAD_INICIO;
             numeroEtapa = 1;
             totalPartidos = totalGoles = totalAsistencias = totalTitulos = totalBalonesOro = 0;
-
+            historialCompeticiones.clear();
+            competicionesService.reiniciarCarrera();
+            ultimoMovimientoMercado = "Todavía no realizaste transferencias.";
             showDashboard();
-            showAlert(Alert.AlertType.INFORMATION, "Carrera creada", nombre + " ya forma parte de la base de datos.\nModo: " + dificultad + " · " + temporadas + " temporada(s) por etapa.");
+            showAlert(Alert.AlertType.INFORMATION, "Contrato firmado",
+                    nombre + " se incorporó a " + clubActual + ".\nModo " + dificultad + " · " + temporadas + " temporada(s) por etapa.");
         } catch (NumberFormatException ex) {
             showAlert(Alert.AlertType.WARNING, "Dorsal inválido", "El dorsal debe ser un número entre 1 y 99.");
         } catch (Exception ex) {
@@ -365,90 +422,78 @@ public class MainApp extends Application {
 
         jugador.setNombre(nombre);
         jugador.setEdad(16);
-        jugador.setOvr(50);
-        jugador.setPrecio(500000.0);
-        jugador.setResistencia(50);
+        jugador.setOvr(52);
+        jugador.setPrecio(650000.0);
+        jugador.setResistencia(55);
         jugador.setEquipo(club);
         jugador.setDorsal(dorsal);
         jugador.setPosicion(posicion);
-        jugador.setVelocidad(50);
-        jugador.setRemate(50);
-        jugador.setFuerza(50);
-        jugador.setPase(50);
-        jugador.setRegate(50);
+        jugador.setVelocidad(52);
+        jugador.setRemate(51);
+        jugador.setFuerza(51);
+        jugador.setPase(52);
+        jugador.setRegate(52);
         jugador.setCentros(50);
-        jugador.setMarcaje(50);
-        jugador.setDefinicion(50);
-        jugador.setControl(50);
-        jugador.setEntradas(50);
-
+        jugador.setMarcaje(48);
+        jugador.setDefinicion(51);
+        jugador.setControl(52);
+        jugador.setEntradas(48);
         if (jugador instanceof Arquero arquero) {
-            arquero.setReflejos(50);
-            arquero.setAtajadas(50);
-            arquero.setSalida(50);
-            arquero.setJuegoConPies(50);
+            arquero.setReflejos(54); arquero.setAtajadas(54); arquero.setSalida(51); arquero.setJuegoConPies(52);
         } else if (jugador instanceof Defensa defensa) {
-            defensa.setCabezazo(50);
+            defensa.setCabezazo(53); jugador.setMarcaje(54); jugador.setEntradas(54);
         } else if (jugador instanceof Mediocampista medio) {
-            medio.setVision(50);
-            medio.setRecuperacion(50);
+            medio.setVision(54); medio.setRecuperacion(52); jugador.setPase(55); jugador.setControl(54);
         } else if (jugador instanceof Delantero delantero) {
-            delantero.setCabezazo(50);
+            delantero.setCabezazo(51); jugador.setRemate(55); jugador.setDefinicion(55); jugador.setRegate(54);
         }
         return jugador;
     }
 
     // ---------------------------------------------------------------------
-    // PANEL DE CARRERA
+    // PANEL PRINCIPAL DE CARRERA
     // ---------------------------------------------------------------------
 
     private void showDashboard() {
-        if (jugadorActual == null) {
-            showHome();
-            return;
-        }
-
+        if (jugadorActual == null) { showCreatePlayer(); return; }
         BorderPane shell = createShell("CARRERA");
         VBox page = pageContent();
-        page.getChildren().add(topBar("CENTRO DEL JUGADOR", "CARRERA ACTIVA"));
+        page.getChildren().add(topBar("CENTRO DEL FUTBOLISTA", "TEMPORADA " + anioActual));
 
-        HBox profile = new HBox(22);
-        profile.getStyleClass().add("player-hero");
-        profile.setPadding(new Insets(26));
-        profile.setAlignment(Pos.CENTER_LEFT);
-
-        StackPane shirt = new StackPane();
-        shirt.getStyleClass().add("shirt-badge");
-        Label dorsal = label(String.format("%02d", jugadorActual.getDorsal()), "shirt-number");
-        shirt.getChildren().add(dorsal);
-        shirt.setMinSize(104, 112);
-        shirt.setPrefSize(104, 112);
+        HBox hero = new HBox(20);
+        hero.getStyleClass().add("player-hero");
+        hero.setPadding(new Insets(24));
+        hero.setAlignment(Pos.CENTER_LEFT);
+        ClubInfo clubInfo = clubActualInfo();
+        StackPane kit = new StackPane();
+        kit.getStyleClass().add("shirt-badge");
+        kit.getChildren().add(label(String.format("%02d", jugadorActual.getDorsal()), "shirt-number"));
+        kit.setMinSize(100, 112);
+        kit.setPrefSize(100, 112);
 
         VBox identity = new VBox(8,
                 label("PERFIL PROFESIONAL", "eyebrow"),
                 label(jugadorActual.getNombre(), "player-name"),
-                label(jugadorActual.getPosicion() + "  /  " + clubActual, "player-subtitle"),
+                label(jugadorActual.getPosicion() + "  ·  " + clubActual, "player-subtitle"),
                 pill(dificultadActual + " · " + temporadasPorEtapa + " TEMPORADA(S) POR ETAPA"));
         HBox.setHgrow(identity, Priority.ALWAYS);
 
-        VBox rating = new VBox(2,
-                label("VALORACIÓN", "rating-caption"),
-                label(String.valueOf(jugadorActual.getOvr()), "rating-number"),
-                label("OVR  /  99", "rating-caption"));
+        VBox rating = new VBox(3, label("VALORACIÓN", "rating-caption"),
+                label(String.valueOf(jugadorActual.getOvr()), "rating-number"), label("OVR / 99", "rating-caption"));
         rating.setAlignment(Pos.CENTER);
         rating.getStyleClass().add("rating-panel");
-        rating.setMinWidth(128);
-        profile.getChildren().addAll(shirt, identity, rating);
+        rating.setMinWidth(126);
+        hero.getChildren().addAll(clubLogo(clubInfo, 76), kit, identity, rating);
 
-        HBox metrics = new HBox(13,
-                metricCard("EDAD", edadActual + " años", "de 16 a 40"),
-                metricCard("TEMPORADA", String.valueOf(anioActual), "siguiente por jugar"),
-                metricCard("ETAPA", String.valueOf(numeroEtapa), "de " + (24 / temporadasPorEtapa)),
-                metricCard("MODO", dificultadActual, temporadasPorEtapa + " por avance"));
+        HBox metrics = new HBox(12,
+                metricCard("EDAD", edadActual + " años", "objetivo: 40"),
+                metricCard("TEMPORADA", String.valueOf(anioActual), "año en curso"),
+                metricCard("ETAPA", numeroEtapa + " / " + (24 / temporadasPorEtapa), temporadasPorEtapa + " temporada(s)"),
+                metricCard("VALOR DE MERCADO", moneda.format(jugadorActual.getPrecio()), "estimación del juego"));
 
         VBox attributes = surfaceCard();
+        attributes.getChildren().add(sectionHeading("SCOUTING", "ATRIBUTOS DEL JUGADOR", "Tu rendimiento actual · máximo 99"));
         attributes.getChildren().addAll(
-                sectionHeading("RENDIMIENTO", "ATRIBUTOS DEL JUGADOR", "Valores actuales de tu futbolista"),
                 attributeRow("Velocidad", jugadorActual.getVelocidad()),
                 attributeRow("Remate", jugadorActual.getRemate()),
                 attributeRow("Definición", jugadorActual.getDefinicion()),
@@ -458,19 +503,18 @@ public class MainApp extends Application {
                 attributeRow("Fuerza", jugadorActual.getFuerza()),
                 attributeRow("Marcaje", jugadorActual.getMarcaje()),
                 attributeRow("Entradas", jugadorActual.getEntradas()),
+                attributeRow("Centros", jugadorActual.getCentros()),
                 attributeRow("Resistencia", jugadorActual.getResistencia()));
+        addSpecificAttributes(attributes);
 
-        VBox actionCard = surfaceCard();
-        actionCard.getChildren().addAll(
-                sectionHeading("SIGUIENTE MOVIMIENTO", "PREPARÁ LA ETAPA", "Elegí cómo querés preparar a tu jugador."));
+        VBox progression = surfaceCard();
+        progression.getChildren().addAll(
+                sectionHeading("DESARROLLO", "CENTRO DE ENTRENAMIENTO", "Elegí un plan para potenciar tus características."),
+                label(edadActual < 30 ? "ETAPA DE CRECIMIENTO · Podés mejorar atributos y OVR." : "ETAPA VETERANA · Podés mejorar atributos, pero el OVR empieza a declinar.", "growth-status"));
         ToggleGroup trainingGroup = new ToggleGroup();
-        GridPane trainingOptions = new GridPane();
-        trainingOptions.setHgap(8);
-        trainingOptions.setVgap(8);
-        List<String> trainingNames = new ArrayList<>(List.of("Velocidad", "Definición", "Pase y visión",
-                "Regate y control", "Fuerza", "Resistencia", "Marcaje y entradas"));
-        if (jugadorActual instanceof Arquero) trainingNames.add("Atajadas");
-        trainingNames.add("Descanso y recuperación");
+        GridPane trainingGrid = new GridPane();
+        trainingGrid.setHgap(8); trainingGrid.setVgap(8);
+        List<String> trainingNames = trainingOptionsForPlayer();
         for (int i = 0; i < trainingNames.size(); i++) {
             ToggleButton option = new ToggleButton(trainingNames.get(i));
             option.setToggleGroup(trainingGroup);
@@ -479,53 +523,73 @@ public class MainApp extends Application {
             option.setMaxWidth(Double.MAX_VALUE);
             option.setMinHeight(42);
             GridPane.setHgrow(option, Priority.ALWAYS);
-            trainingOptions.add(option, i % 2, i / 2);
+            trainingGrid.add(option, i % 2, i / 2);
             if (i == 0) option.setSelected(true);
         }
-        trainingOptions.setMaxWidth(Double.MAX_VALUE);
-        actionCard.getChildren().addAll(
-                label("ELEGÍ TU ENTRENAMIENTO", "field-label"), trainingOptions,
-                label(edadActual < 30
-                        ? "Cada enfoque mejora atributos diferentes y puede darte +1 OVR. Tu etapa de crecimiento termina a los 29 años."
-                        : "Etapa de veterano: el OVR ya no aumenta. Desde los 30 pierde puntos por temporada según edad y rendimiento.", "helper-text"));
-
-        Label simulationInfo = label(
-                "Al avanzar se simularán " + temporadasPorEtapa + " temporada(s), salvo que llegues a los 40 años.",
-                "helper-text");
-        simulationInfo.setWrapText(true);
-        Button simulate = primaryButton(edadActual >= 40 ? "VER RESUMEN FINAL" : "SIMULAR SIGUIENTE ETAPA  →");
+        progression.getChildren().addAll(label("PLAN INDIVIDUAL", "field-label"), trainingGrid,
+                label("También podés ganar valoración con temporadas sobresalientes, títulos, premios y mentorías.", "helper-text"));
+        Button simulate = primaryButton(edadActual >= EDAD_RETIRO ? "FINALIZAR CARRERA" : "ENTRENAR Y AVANZAR ETAPA  →");
         simulate.setMaxWidth(Double.MAX_VALUE);
         simulate.setOnAction(e -> {
-            if (edadActual >= 40) showCareerSummary();
-            else {
-                ToggleButton selectedTraining = (ToggleButton) trainingGroup.getSelectedToggle();
-                if (selectedTraining == null) {
-                    showAlert(Alert.AlertType.WARNING, "Elegí una opción", "Seleccioná un entrenamiento o descanso antes de avanzar.");
-                    return;
-                }
-                simulateStage((String) selectedTraining.getUserData());
-            }
+            if (edadActual >= EDAD_RETIRO) { showCareerSummary(); return; }
+            ToggleButton selected = (ToggleButton) trainingGroup.getSelectedToggle();
+            if (selected == null) { showAlert(Alert.AlertType.WARNING, "Elegí un plan", "Seleccioná un entrenamiento antes de avanzar."); return; }
+            simulateStage((String) selected.getUserData());
         });
-        actionCard.getChildren().addAll(simulationInfo, simulate);
+        progression.getChildren().addAll(
+                label("Se simularán " + Math.min(temporadasPorEtapa, EDAD_RETIRO - edadActual) + " temporada(s) en el próximo avance.", "helper-text"),
+                simulate);
 
-        HBox lower = new HBox(14, attributes, actionCard);
-        HBox.setHgrow(attributes, Priority.ALWAYS);
-        HBox.setHgrow(actionCard, Priority.ALWAYS);
-        attributes.setPrefWidth(510);
-        actionCard.setPrefWidth(390);
+        VBox quick = surfaceCard();
+        quick.getChildren().add(sectionHeading("GESTIÓN", "EL PRÓXIMO PASO", "Tu carrera no se juega solamente dentro de la cancha."));
+        HBox quickButtons = new HBox(10,
+                primaryButton("MERCADO DE PASES  ⇄"), secondaryButton("COMPETICIONES  ♜"), secondaryButton("MIS ESTADÍSTICAS  ▤"));
+        ((Button) quickButtons.getChildren().get(0)).setOnAction(e -> showTransfers());
+        ((Button) quickButtons.getChildren().get(1)).setOnAction(e -> showCompetitions());
+        ((Button) quickButtons.getChildren().get(2)).setOnAction(e -> showCareerSummary());
+        quick.getChildren().addAll(quickButtons, label(ultimoMovimientoMercado, "helper-text"));
 
-        double progress = Math.min(1.0, (edadActual - 16) / 24.0);
-        VBox careerProgress = surfaceCard();
-        ProgressBar progressBar = new ProgressBar(progress);
-        progressBar.getStyleClass().add("career-progress");
-        progressBar.setMaxWidth(Double.MAX_VALUE);
-        HBox progressLabels = new HBox(
-                label("PROGRESO DE CARRERA", "section-title"),
-                spacer(), label(edadActual + " / 40 AÑOS", "helper-text"));
-        careerProgress.getChildren().addAll(progressLabels, progressBar);
+        HBox mainColumns = new HBox(14, attributes, progression);
+        HBox.setHgrow(attributes, Priority.ALWAYS); HBox.setHgrow(progression, Priority.ALWAYS);
+        attributes.setPrefWidth(520); progression.setPrefWidth(520);
 
-        page.getChildren().addAll(profile, metrics, lower, careerProgress);
+        double progress = Math.min(1.0, (edadActual - EDAD_INICIO) / (double) (EDAD_RETIRO - EDAD_INICIO));
+        VBox progressCard = surfaceCard();
+        ProgressBar bar = new ProgressBar(progress);
+        bar.getStyleClass().add("career-progress"); bar.setMaxWidth(Double.MAX_VALUE);
+        HBox progressHeading = new HBox(label("PROGRESO DE CARRERA", "section-title"), spacer(),
+                label(edadActual + " / " + EDAD_RETIRO + " AÑOS", "helper-text"));
+        progressCard.getChildren().addAll(progressHeading, bar);
+
+        page.getChildren().addAll(hero, metrics, mainColumns, quick, progressCard);
         setPage(shell, page);
+    }
+
+    private List<String> trainingOptionsForPlayer() {
+        List<String> options = new ArrayList<>(List.of(
+                "Velocidad", "Definición", "Pase y visión", "Regate y control",
+                "Fuerza", "Resistencia", "Marcaje y entradas", "Centros",
+                "Técnica avanzada", "Preparación física", "Análisis táctico",
+                "Entrenamiento intensivo", "Mentoría profesional"));
+        if (jugadorActual instanceof Arquero) options.add("Atajadas");
+        if (jugadorActual instanceof Defensa || jugadorActual instanceof Delantero) options.add("Cabezazo");
+        options.add("Descanso y recuperación");
+        return options;
+    }
+
+    private void addSpecificAttributes(VBox card) {
+        if (jugadorActual instanceof Arquero a) {
+            card.getChildren().addAll(label("ATRIBUTOS DE ARQUERO", "attribute-section"),
+                    attributeRow("Reflejos", a.getReflejos()), attributeRow("Atajadas", a.getAtajadas()),
+                    attributeRow("Salidas", a.getSalida()), attributeRow("Juego con pies", a.getJuegoConPies()));
+        } else if (jugadorActual instanceof Defensa d) {
+            card.getChildren().addAll(label("ATRIBUTO DE DEFENSA", "attribute-section"), attributeRow("Cabezazo", d.getCabezazo()));
+        } else if (jugadorActual instanceof Mediocampista m) {
+            card.getChildren().addAll(label("ATRIBUTOS DE MEDIOCAMPISTA", "attribute-section"),
+                    attributeRow("Visión", m.getVision()), attributeRow("Recuperación", m.getRecuperacion()));
+        } else if (jugadorActual instanceof Delantero d) {
+            card.getChildren().addAll(label("ATRIBUTO DE DELANTERO", "attribute-section"), attributeRow("Cabezazo", d.getCabezazo()));
+        }
     }
 
     private void simulateStage(String decision) {
@@ -533,143 +597,290 @@ public class MainApp extends Application {
         try {
             String trainingMessage;
             if ("Descanso y recuperación".equals(decision)) {
-                jugadorActual.setResistencia(Math.min(99, jugadorActual.getResistencia() + 5));
-                trainingMessage = "Descanso completo: recuperaste 5 puntos de resistencia.";
-                jugadorService.actualizarJugador(jugadorActual);
+                jugadorActual.setResistencia(Math.min(99, jugadorActual.getResistencia() + 7));
+                trainingMessage = "Descanso y recuperación: +7 resistencia.";
             } else {
                 trainingMessage = jugadorService.entrenarConEnfoque(jugadorActual, decision);
             }
-
             String eventMessage = resolverEventoAleatorio();
             jugadorService.actualizarJugador(jugadorActual);
 
             int etapaSimulada = numeroEtapa;
-            int cantidad = Math.min(temporadasPorEtapa, 40 - edadActual);
+            int cantidad = Math.min(temporadasPorEtapa, EDAD_RETIRO - edadActual);
             List<ResultadoTemporada> resultados = new ArrayList<>();
-            List<String> declives = new ArrayList<>();
+            List<String> aging = new ArrayList<>();
             for (int i = 0; i < cantidad; i++) {
-                ResultadoTemporada resultado = jugadorService.simularTemporadaConResultado(
-                        jugadorActual, clubActual, anioActual, random);
-                resultados.add(resultado);
+                ResultadoTemporada resultado = jugadorService.simularTemporadaConResultado(jugadorActual, clubActual, anioActual, random);
+                ClubInfo club = clubActualInfo();
+                List<ResultadoCompeticion> copas = competicionesService.simularTemporada(jugadorActual, club, random);
+                resultado.setCompeticiones(copas);
+                historialCompeticiones.addAll(copas);
+
                 totalPartidos += resultado.getPartidos();
                 totalGoles += resultado.getGoles();
                 totalAsistencias += resultado.getAsistencias();
-                if (resultado.isCampeon()) totalTitulos++;
-                if (resultado.isBalonOro()) totalBalonesOro++;
+                totalBalonesOro += resultado.isBalonOro() ? 1 : 0;
+                long titulos = copas.stream().filter(ResultadoCompeticion::isCampeon).count();
+                totalTitulos += (int) titulos;
 
-                // El rendimiento de ESTA temporada define cuánto se conserva el nivel al envejecer.
-                declives.add(jugadorService.aplicarDeclivePorTemporada(jugadorActual, resultado));
+                String bonus = jugadorService.aplicarProgresoPorRendimiento(jugadorActual, resultado);
+                String declive = jugadorService.aplicarDeclivePorTemporada(jugadorActual, resultado);
+                if (!bonus.isBlank()) aging.add(bonus);
+                if (declive != null && !declive.isBlank() && !declive.startsWith("Etapa de desarrollo")) aging.add(declive);
+
+                resultados.add(resultado);
                 anioActual++;
                 edadActual++;
                 jugadorActual.setEdad(edadActual);
             }
-
             jugadorActual.setEdad(edadActual);
             jugadorActual.setEquipo(clubActual);
             jugadorService.actualizarJugador(jugadorActual);
             numeroEtapa++;
-            String agingMessage = declives.stream().filter(m -> m.contains("Declive") || m.contains("sobresaliente"))
-                    .reduce((a, b) -> a + " | " + b).orElse("La edad todavía no afecta tu valoración.");
-            showStageResults(resultados, etapaSimulada, trainingMessage, eventMessage + " " + agingMessage);
+            String growthMessage = aging.isEmpty() ? "El progreso dependerá del próximo rendimiento." : String.join("  ·  ", aging);
+            showStageResults(resultados, etapaSimulada, trainingMessage, eventMessage + " " + growthMessage);
         } catch (Exception ex) {
             showAlert(Alert.AlertType.ERROR, "No se pudo simular la etapa", safeMessage(ex));
         }
     }
 
-    /** Eventos de carrera con efectos reales sobre atributos, resistencia y valoración. */
     private String resolverEventoAleatorio() {
-        int evento = random.nextInt(7);
+        int evento = random.nextInt(9);
         switch (evento) {
             case 0 -> {
                 jugadorActual.setVelocidad(Math.min(99, jugadorActual.getVelocidad() + 2));
                 if (edadActual < 30) jugadorActual.setOvr(Math.min(99, jugadorActual.getOvr() + 1));
-                return "🌟 Descubrimiento: una gran actuación llamó la atención. +2 velocidad" + (edadActual < 30 ? " y +1 OVR." : ". El OVR no aumenta después de los 29 años.");
+                return "🌟 Oportunidad: una actuación llamó la atención del cuerpo técnico. +2 velocidad" + (edadActual < 30 ? " y +1 OVR." : "." );
             }
             case 1 -> {
                 int perdida = random.nextInt(3) + 2;
                 jugadorActual.setResistencia(Math.max(1, jugadorActual.getResistencia() - perdida));
-                return "🩹 Molestia muscular: perdiste " + perdida + " puntos de resistencia. Vas a necesitar recuperación.";
+                return "🩹 Molestia muscular: -" + perdida + " resistencia. Necesitás recuperar.";
             }
             case 2 -> {
                 jugadorActual.setControl(Math.min(99, jugadorActual.getControl() + 2));
                 jugadorActual.setPase(Math.min(99, jugadorActual.getPase() + 1));
-                return "🎯 Consejo de un referente: mejoraste +2 control y +1 pase.";
+                return "🎯 Consejo de un referente: +2 control y +1 pase.";
             }
             case 3 -> {
                 jugadorActual.setFuerza(Math.min(99, jugadorActual.getFuerza() + 2));
-                return "💪 Plan físico personalizado: ganaste +2 fuerza.";
+                return "💪 Plan físico personalizado: +2 fuerza.";
             }
             case 4 -> {
                 jugadorActual.setResistencia(Math.min(99, jugadorActual.getResistencia() + 4));
-                return "🔋 Semana de recuperación: recuperaste +4 resistencia.";
+                return "🔋 Semana de recuperación: +4 resistencia.";
             }
             case 5 -> {
-                if (edadActual < 30) {
-                    jugadorActual.setOvr(Math.min(99, jugadorActual.getOvr() + 1));
-                    return "📈 Racha de confianza: el entrenador te da más minutos. +1 OVR.";
-                }
+                if (edadActual < 30) jugadorActual.setOvr(Math.min(99, jugadorActual.getOvr() + 1));
                 jugadorActual.setPase(Math.min(99, jugadorActual.getPase() + 1));
-                return "🧠 Experiencia: tu lectura de juego mejora (+1 pase), sin aumentar el OVR.";
+                return edadActual < 30 ? "📈 Racha de confianza: +1 pase y +1 OVR." : "🧠 Experiencia: +1 pase.";
+            }
+            case 6 -> {
+                jugadorActual.setRegate(Math.min(99, jugadorActual.getRegate() + 2));
+                return "⚡ Entrenamiento extra: +2 regate.";
+            }
+            case 7 -> {
+                jugadorActual.setPrecio(jugadorActual.getPrecio() * 1.08);
+                return "💹 Tu cotización subió un 8% gracias al interés de otros clubes.";
             }
             default -> {
-                jugadorActual.setRegate(Math.min(99, jugadorActual.getRegate() + 2));
-                return "⚡ Entrenamiento extra: mejoraste +2 regate.";
+                jugadorActual.setCentros(Math.min(99, jugadorActual.getCentros() + 2));
+                return "🧤 Sesión técnica adicional: +2 centros.";
             }
         }
     }
+
+    // ---------------------------------------------------------------------
+    // MERCADO DE PASES
+    // ---------------------------------------------------------------------
+
+    private void showTransfers() {
+        if (jugadorActual == null) { showAlert(Alert.AlertType.INFORMATION, "Sin carrera", "Creá un futbolista antes de entrar al mercado."); showCreatePlayer(); return; }
+        ofertasActuales = mercadoService.generarOfertas(jugadorActual, clubActual, random);
+        BorderPane shell = createShell("MERCADO");
+        VBox page = pageContent();
+        page.getChildren().add(topBar("MERCADO DE PASES", "VENTANA DE TRANSFERENCIAS"));
+        page.getChildren().addAll(label("TU REPRESENTANTE", "eyebrow"), label("Hay clubes preguntando por vos.", "page-title"),
+                label("Compará el proyecto deportivo, la duración del contrato y el valor de cada oferta.", "page-subtitle"));
+
+        HBox current = new HBox(16);
+        current.getStyleClass().add("market-current");
+        current.setPadding(new Insets(20));
+        current.setAlignment(Pos.CENTER_LEFT);
+        current.getChildren().addAll(clubLogo(clubActualInfo(), 62),
+                new VBox(5, label("CLUB ACTUAL", "eyebrow"), label(clubActual, "club-preview-name"),
+                        label("Valor estimado: " + moneda.format(jugadorActual.getPrecio()), "club-preview-subtitle")), spacer(),
+                pill("OVR " + jugadorActual.getOvr() + " · " + edadActual + " AÑOS"));
+
+        FlowPane offersGrid = new FlowPane(14, 14);
+        for (OfertaTransferencia offer : ofertasActuales) offersGrid.getChildren().add(offerCard(offer));
+        VBox note = surfaceCard();
+        note.getChildren().addAll(sectionHeading("NEGOCIACIÓN", "ÚLTIMO MOVIMIENTO", ultimoMovimientoMercado),
+                label("Al aceptar una oferta se actualiza el club y el valor del jugador en MySQL. El dorsal se conserva si está disponible.", "helper-text"));
+        Button refresh = secondaryButton("BUSCAR NUEVAS OFERTAS");
+        refresh.setOnAction(e -> showTransfers());
+        Button back = primaryButton("VOLVER A MI CARRERA");
+        back.setOnAction(e -> showDashboard());
+        HBox actions = new HBox(12, refresh, back);
+        page.getChildren().addAll(current, label("OFERTAS RECIBIDAS", "section-title"), offersGrid, note, actions);
+        setPage(shell, page);
+    }
+
+    private VBox offerCard(OfertaTransferencia offer) {
+        ClubInfo club = offer.getClub();
+        VBox card = surfaceCard();
+        card.getStyleClass().add("offer-card");
+        HBox head = new HBox(12, clubLogo(club, 58),
+                new VBox(4, label(club.getNombre(), "club-card-title"), label(club.getProvincia(), "club-preview-subtitle")));
+        head.setAlignment(Pos.CENTER_LEFT);
+        card.getChildren().addAll(head,
+                metricLine("VALOR DEL FICHAJE", moneda.format(offer.getValorMercado())),
+                metricLine("SALARIO ANUAL", moneda.format(offer.getSalarioAnual())),
+                metricLine("CONTRATO", offer.getAnosContrato() + " temporadas"),
+                label(offer.getMotivo(), "helper-text"));
+        Button accept = primaryButton("ACEPTAR OFERTA  →");
+        accept.setMaxWidth(Double.MAX_VALUE);
+        accept.setOnAction(e -> aceptarOferta(offer));
+        card.getChildren().add(accept);
+        card.setPrefWidth(310);
+        card.setMinWidth(290);
+        return card;
+    }
+
+    private HBox metricLine(String key, String value) {
+        HBox line = new HBox(8, label(key, "metric-title"), spacer(), label(value, "metric-value-small"));
+        line.setAlignment(Pos.CENTER_LEFT);
+        return line;
+    }
+
+    private void aceptarOferta(OfertaTransferencia oferta) {
+        try {
+            String anterior = clubActual;
+            clubActual = oferta.getClub().getNombre();
+            jugadorActual.setEquipo(clubActual);
+            jugadorActual.setPrecio(oferta.getValorMercado());
+            jugadorService.actualizarJugador(jugadorActual);
+            ultimoMovimientoMercado = "Transferencia: " + anterior + " → " + clubActual + ". Contrato por " + oferta.getAnosContrato() + " temporadas.";
+            showAlert(Alert.AlertType.INFORMATION, "¡Fichaje confirmado!", jugadorActual.getNombre() + " jugará en " + clubActual + ".\nValor: " + moneda.format(oferta.getValorMercado()));
+            showDashboard();
+        } catch (Exception ex) {
+            showAlert(Alert.AlertType.ERROR, "No se pudo completar el fichaje", safeMessage(ex));
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // COMPETICIONES NACIONALES E INTERNACIONALES
+    // ---------------------------------------------------------------------
+
+    private void showCompetitions() {
+        if (jugadorActual == null) { showAlert(Alert.AlertType.INFORMATION, "Sin carrera", "Creá un futbolista para consultar sus competiciones."); showCreatePlayer(); return; }
+        BorderPane shell = createShell("COMPETICIONES");
+        VBox page = pageContent();
+        page.getChildren().add(topBar("CALENDARIO DE COMPETICIONES", "TEMPORADA " + anioActual));
+        page.getChildren().addAll(label("EL SUEÑO DE TODO FUTBOLISTA", "eyebrow"),
+                label("Competí por todo.", "page-title"),
+                label("Los torneos se resuelven al simular cada temporada. La clasificación internacional depende del nivel y la reputación del club.", "page-subtitle"));
+
+        VBox national = surfaceCard();
+        national.getChildren().addAll(sectionHeading("ARGENTINA", "COMPETICIONES NACIONALES", "El calendario del fútbol argentino en el modo carrera."),
+                competitionTile("Torneo Apertura", "Liga · Torneo de primera mitad de año", "NACIONAL"),
+                competitionTile("Torneo Clausura", "Liga · Torneo de segunda mitad de año", "NACIONAL"),
+                competitionTile("Copa Argentina", "Copa nacional · eliminación directa", "NACIONAL"),
+                competitionTile("Campeón de Liga", "Tabla general anual", "NACIONAL"),
+                competitionTile("Trofeo de Campeones", "Enfrenta a campeones del Apertura y Clausura", "NACIONAL"),
+                competitionTile("Supercopa Argentina", "Campeones nacionales", "NACIONAL"),
+                competitionTile("Supercopa Internacional", "Título entre campeones de la temporada", "NACIONAL"));
+
+        VBox international = surfaceCard();
+        international.getChildren().addAll(sectionHeading("CONMEBOL", "COMPETICIONES INTERNACIONALES", "La clasificación se define por reputación del club y rendimiento."),
+                competitionTile("Copa Libertadores", "El máximo objetivo continental", "INTERNACIONAL"),
+                competitionTile("Copa Sudamericana", "La otra gran copa de clubes de América", "INTERNACIONAL"),
+                competitionTile("Recopa Sudamericana", "Desafío reservado a campeones continentales", "INTERNACIONAL"),
+                label("En esta versión, Libertadores y Sudamericana se asignan mediante una simulación de clasificación del juego; la Recopa queda como competición futura para ampliar.", "helper-text"));
+
+        VBox history = surfaceCard();
+        history.getChildren().add(sectionHeading("HISTORIAL", "TUS RESULTADOS", "Se muestran las competiciones simuladas durante esta carrera."));
+        if (historialCompeticiones.isEmpty()) {
+            history.getChildren().add(label("Todavía no jugaste una temporada. Avanzá desde el panel de carrera para generar resultados.", "helper-text"));
+        } else {
+            for (int i = historialCompeticiones.size() - 1; i >= 0; i--) {
+                ResultadoCompeticion result = historialCompeticiones.get(i);
+                history.getChildren().add(resultLine(result));
+            }
+        }
+        Button back = primaryButton("VOLVER A MI CARRERA");
+        back.setOnAction(e -> showDashboard());
+        page.getChildren().addAll(new HBox(14, national, international), history, back);
+        setPage(shell, page);
+    }
+
+    private VBox competitionTile(String name, String description, String type) {
+        HBox row = new HBox(12, pill(type), new VBox(3, label(name, "club-card-title"), label(description, "helper-text")));
+        row.setAlignment(Pos.CENTER_LEFT);
+        row.getStyleClass().add("competition-tile");
+        VBox wrapper = new VBox(row);
+        return wrapper;
+    }
+
+    private HBox resultLine(ResultadoCompeticion result) {
+        Label badge = pill(result.isCampeon() ? "CAMPEÓN" : result.getCategoria());
+        VBox copy = new VBox(3, label(result.getNombre(), "club-card-title"), label(result.getFase() + " · " + result.getDetalle(), "helper-text"));
+        HBox row = new HBox(12, badge, copy, spacer());
+        row.setAlignment(Pos.CENTER_LEFT);
+        row.getStyleClass().add("result-line");
+        return row;
+    }
+
+    // ---------------------------------------------------------------------
+    // RESULTADOS DE ETAPA Y RESUMEN DE CARRERA
+    // ---------------------------------------------------------------------
 
     private void showStageResults(List<ResultadoTemporada> resultados, int etapa,
                                   String trainingMessage, String eventMessage) {
         BorderPane shell = createShell("CARRERA");
         VBox page = pageContent();
-        page.getChildren().add(topBar("RESUMEN DE ETAPA", "ETAPA " + etapa));
-        page.getChildren().addAll(
-                label("EL CAMINO CONTINÚA", "eyebrow"),
-                label("Así te fue en la cancha.", "page-title"),
-                label(trainingMessage, "page-subtitle"),
-                label(eventMessage, "event-banner"));
+        page.getChildren().add(topBar("INFORME DE RENDIMIENTO", "ETAPA " + etapa));
+        page.getChildren().addAll(label("EL CAMINO CONTINÚA", "eyebrow"),
+                label("Así se escribió esta etapa.", "page-title"),
+                label(trainingMessage, "page-subtitle"), label(eventMessage, "event-banner"));
 
-        HBox seasonCards = new HBox(14);
-        for (ResultadoTemporada resultado : resultados) {
-            seasonCards.getChildren().add(seasonCard(resultado));
-        }
-
+        FlowPane seasonCards = new FlowPane(14, 14);
+        for (ResultadoTemporada result : resultados) seasonCards.getChildren().add(seasonCard(result));
         HBox summary = new HBox(12,
                 metricCard("PARTIDOS", String.valueOf(sumPartidos(resultados)), "en esta etapa"),
                 metricCard("GOLES", String.valueOf(sumGoles(resultados)), "en esta etapa"),
-                metricCard("ASISTENCIAS", String.valueOf(sumAsistencias(resultados)), "en esta etapa"));
+                metricCard("ASISTENCIAS", String.valueOf(sumAsistencias(resultados)), "en esta etapa"),
+                metricCard("OVR ACTUAL", jugadorActual.getOvr() + " / 99", "valoración"));
 
         Button continueButton;
-        if (edadActual >= 40) {
-            continueButton = primaryButton("FINALIZAR CARRERA  →");
+        if (edadActual >= EDAD_RETIRO) {
+            continueButton = primaryButton("CERRAR CARRERA  →");
             continueButton.setOnAction(e -> showCareerSummary());
         } else {
-            continueButton = primaryButton("VOLVER AL PANEL DE CARRERA  →");
+            continueButton = primaryButton("VOLVER AL CENTRO DE CARRERA  →");
             continueButton.setOnAction(e -> showDashboard());
         }
-        Button home = secondaryButton("MENÚ PRINCIPAL");
-        home.setOnAction(e -> showHome());
-        HBox actions = new HBox(12, home, continueButton);
-        actions.setAlignment(Pos.CENTER_RIGHT);
-
-        page.getChildren().addAll(label("TEMPORADAS SIMULADAS", "section-title"), seasonCards,
-                label("RENDIMIENTO DE LA ETAPA", "section-title"), summary, actions);
+        Button market = secondaryButton("REVISAR OFERTAS"); market.setOnAction(e -> showTransfers());
+        Button home = secondaryButton("MENÚ PRINCIPAL"); home.setOnAction(e -> showHome());
+        page.getChildren().addAll(label("TEMPORADAS Y COMPETICIONES", "section-title"), seasonCards,
+                label("RENDIMIENTO DE LA ETAPA", "section-title"), summary, new HBox(10, home, market, continueButton));
         setPage(shell, page);
     }
 
-    private VBox seasonCard(ResultadoTemporada r) {
+    private VBox seasonCard(ResultadoTemporada result) {
         VBox card = surfaceCard();
-        Label year = label(String.valueOf(r.getAnio()), "season-year");
-        Label club = label(r.getClub(), "player-subtitle");
-        HBox miniStats = new HBox(16,
-                miniStat("PJ", r.getPartidos()), miniStat("GOL", r.getGoles()), miniStat("AST", r.getAsistencias()));
-        VBox awards = new VBox(5);
-        if (r.isCampeon()) awards.getChildren().add(label("🏆 CAMPEÓN", "award-label"));
-        if (r.isBalonOro()) awards.getChildren().add(label("★ BALÓN DE ORO", "award-label"));
-        if (!r.isCampeon() && !r.isBalonOro()) awards.getChildren().add(label("TEMPORADA COMPLETADA", "helper-text"));
-        card.getChildren().addAll(label("TEMPORADA", "eyebrow"), year, club, miniStats, awards);
-        HBox.setHgrow(card, Priority.ALWAYS);
-        card.setMinWidth(190);
+        card.getStyleClass().add("season-card");
+        HBox header = new HBox(10, label(String.valueOf(result.getAnio()), "season-year"), spacer(), pill(result.getClub()));
+        HBox miniStats = new HBox(15, miniStat("PJ", result.getPartidos()), miniStat("GOL", result.getGoles()), miniStat("AST", result.getAsistencias()));
+        VBox cups = new VBox(6);
+        for (ResultadoCompeticion comp : result.getCompeticiones()) {
+            Label line = label((comp.isCampeon() ? "🏆 " : "• ") + comp.getNombre() + " · " + comp.getFase(), comp.isCampeon() ? "award-label" : "competition-detail");
+            line.setWrapText(true);
+            cups.getChildren().add(line);
+        }
+        if (cups.getChildren().isEmpty()) cups.getChildren().add(label("Temporada completada", "helper-text"));
+        card.getChildren().addAll(header, miniStats, label("COMPETICIONES", "field-label"), cups);
+        card.setPrefWidth(390); card.setMinWidth(340);
         return card;
     }
 
@@ -684,127 +895,135 @@ public class MainApp extends Application {
     private int sumAsistencias(List<ResultadoTemporada> results) { return results.stream().mapToInt(ResultadoTemporada::getAsistencias).sum(); }
 
     private void showCareerSummary() {
+        if (jugadorActual == null) { showHome(); return; }
         BorderPane shell = createShell("CARRERA");
         VBox page = pageContent();
-        page.getChildren().add(topBar("FIN DE CARRERA", "RETIRO · 40 AÑOS"));
-        page.getChildren().addAll(
-                label("UNA HISTORIA PARA RECORDAR", "eyebrow"),
-                label("Te convertiste en una leyenda.", "page-title"),
+        page.getChildren().add(topBar("CIERRE DE CARRERA", "RETIRO · " + edadActual + " AÑOS"));
+        page.getChildren().addAll(label("UNA HISTORIA PARA RECORDAR", "eyebrow"),
+                label("Tu nombre queda en la historia.", "page-title"),
                 label(jugadorActual.getNombre() + " · " + jugadorActual.getPosicion() + " · " + clubActual, "page-subtitle"));
-
-        HBox totals = new HBox(14,
+        HBox totals = new HBox(12,
                 metricCard("PARTIDOS", String.valueOf(totalPartidos), "jugados"),
                 metricCard("GOLES", String.valueOf(totalGoles), "marcados"),
                 metricCard("ASISTENCIAS", String.valueOf(totalAsistencias), "generadas"),
-                metricCard("TÍTULOS", String.valueOf(totalTitulos), "colectivos"),
-                metricCard("BALONES DE ORO", String.valueOf(totalBalonesOro), "premios"));
+                metricCard("TÍTULOS", String.valueOf(totalTitulos), "competiciones"),
+                metricCard("BALONES DE ORO", String.valueOf(totalBalonesOro), "premios individuales"));
         VBox finalCard = surfaceCard();
-        finalCard.getChildren().addAll(
-                sectionHeading("TU LEGADO", "RESUMEN DEL FUTBOLISTA", "Carrera completada"),
+        finalCard.getChildren().addAll(sectionHeading("TU LEGADO", "RESUMEN DEL FUTBOLISTA", "Carrera completada"),
                 detailLine("Valoración final", jugadorActual.getOvr() + " / 99"),
-                detailLine("Edad de retiro", edadActual + " años"),
+                detailLine("Club final", clubActual),
+                detailLine("Valor de mercado", moneda.format(jugadorActual.getPrecio())),
                 detailLine("Modo de simulación", dificultadActual),
                 detailLine("Temporadas por etapa", String.valueOf(temporadasPorEtapa)));
-
-        Button players = primaryButton("VER MIS FUTBOLISTAS");
-        players.setOnAction(e -> showSavedPlayers());
-        Button home = secondaryButton("VOLVER AL INICIO");
-        home.setOnAction(e -> showHome());
-        HBox actions = new HBox(12, home, players);
-        page.getChildren().addAll(totals, finalCard, actions);
+        Button cups = secondaryButton("VER HISTORIAL DE COMPETICIONES"); cups.setOnAction(e -> showCompetitions());
+        Button players = primaryButton("VER MIS FUTBOLISTAS"); players.setOnAction(e -> showSavedPlayers());
+        Button home = secondaryButton("VOLVER AL INICIO"); home.setOnAction(e -> showHome());
+        page.getChildren().addAll(totals, finalCard, new HBox(10, home, cups, players));
         setPage(shell, page);
     }
 
     // ---------------------------------------------------------------------
-    // JUGADORES GUARDADOS
+    // JUGADORES GUARDADOS EN MYSQL
     // ---------------------------------------------------------------------
 
     private void showSavedPlayers() {
         BorderPane shell = createShell("JUGADORES");
         VBox page = pageContent();
         page.getChildren().add(topBar("BASE DE DATOS", "MIS FUTBOLISTAS"));
-        page.getChildren().addAll(
-                label("PLANTEL PERSONAL", "eyebrow"),
-                label("Tus jugadores guardados.", "page-title"),
-                label("Los registros se consultan desde MySQL mediante el servicio.", "page-subtitle"));
-
+        page.getChildren().addAll(label("PLANTEL PERSONAL", "eyebrow"), label("Tus futbolistas guardados.", "page-title"),
+                label("Los registros se consultan desde MySQL mediante JugadorService.", "page-subtitle"));
         TableView<Jugador> table = new TableView<>();
         table.getStyleClass().add("players-table");
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY_ALL_COLUMNS);
         table.setPlaceholder(label("Todavía no hay futbolistas guardados.", "helper-text"));
-
-        TableColumn<Jugador, Number> idCol = new TableColumn<>("ID");
-        idCol.setCellValueFactory(data -> new ReadOnlyObjectWrapper<>(data.getValue().getId()));
-        TableColumn<Jugador, String> nameCol = new TableColumn<>("JUGADOR");
-        nameCol.setCellValueFactory(data -> new ReadOnlyObjectWrapper<>(data.getValue().getNombre()));
-        TableColumn<Jugador, String> posCol = new TableColumn<>("POSICIÓN");
-        posCol.setCellValueFactory(data -> new ReadOnlyObjectWrapper<>(data.getValue().getPosicion()));
-        TableColumn<Jugador, String> clubCol = new TableColumn<>("CLUB");
-        clubCol.setCellValueFactory(data -> new ReadOnlyObjectWrapper<>(data.getValue().getEquipo()));
-        TableColumn<Jugador, Number> ovrCol = new TableColumn<>("OVR");
-        ovrCol.setCellValueFactory(data -> new ReadOnlyObjectWrapper<>(data.getValue().getOvr()));
-        TableColumn<Jugador, Number> dorsalCol = new TableColumn<>("DORSAL");
-        dorsalCol.setCellValueFactory(data -> new ReadOnlyObjectWrapper<>(data.getValue().getDorsal()));
-        table.getColumns().addAll(idCol, nameCol, posCol, clubCol, ovrCol, dorsalCol);
-        table.setPrefHeight(440);
+        TableColumn<Jugador, Number> id = new TableColumn<>("ID"); id.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(d.getValue().getId()));
+        TableColumn<Jugador, String> name = new TableColumn<>("FUTBOLISTA"); name.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(d.getValue().getNombre()));
+        TableColumn<Jugador, String> position = new TableColumn<>("POSICIÓN"); position.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(d.getValue().getPosicion()));
+        TableColumn<Jugador, String> team = new TableColumn<>("CLUB"); team.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(d.getValue().getEquipo()));
+        TableColumn<Jugador, Number> rating = new TableColumn<>("OVR"); rating.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(d.getValue().getOvr()));
+        TableColumn<Jugador, Number> number = new TableColumn<>("DORSAL"); number.setCellValueFactory(d -> new ReadOnlyObjectWrapper<>(d.getValue().getDorsal()));
+        table.getColumns().addAll(id, name, position, team, rating, number);
+        table.setPrefHeight(510);
         loadPlayers(table);
-
-        Button refresh = secondaryButton("ACTUALIZAR LISTA");
-        refresh.setOnAction(e -> loadPlayers(table));
-        Button create = primaryButton("CREAR NUEVA CARRERA  →");
-        create.setOnAction(e -> showCreatePlayer());
-        HBox actions = new HBox(12, refresh, create);
-        page.getChildren().addAll(table, actions);
+        Button refresh = secondaryButton("ACTUALIZAR LISTA"); refresh.setOnAction(e -> loadPlayers(table));
+        Button create = primaryButton("CREAR NUEVA CARRERA  →"); create.setOnAction(e -> showCreatePlayer());
+        page.getChildren().addAll(table, new HBox(10, refresh, create));
         setPage(shell, page);
     }
 
     private void loadPlayers(TableView<Jugador> table) {
-        try {
-            table.setItems(FXCollections.observableArrayList(jugadorService.listarJugadores()));
-        } catch (SQLException ex) {
-            showAlert(Alert.AlertType.ERROR, "Error al consultar MySQL", safeMessage(ex));
-        }
+        try { table.setItems(FXCollections.observableArrayList(jugadorService.listarJugadores())); }
+        catch (SQLException ex) { showAlert(Alert.AlertType.ERROR, "Error al consultar MySQL", safeMessage(ex)); }
     }
 
     // ---------------------------------------------------------------------
-    // COMPONENTES REUTILIZABLES Y ESTILOS
+    // COMPONENTES VISUALES REUTILIZABLES
     // ---------------------------------------------------------------------
+
+    private HBox clubMiniCard(ClubInfo club) {
+        Label fullName = label(club.getNombre(), "club-mini-detail");
+        fullName.setWrapText(true);
+        VBox names = new VBox(2, label(club.getAbreviatura(), "club-mini-name"), fullName);
+        HBox card = new HBox(8, clubLogo(club, 38), names);
+        card.getStyleClass().add("club-mini-card");
+        card.setAlignment(Pos.CENTER_LEFT);
+        card.setPrefWidth(190);
+        card.setMinHeight(66);
+        return card;
+    }
+
+    private Node clubLogo(ClubInfo club, double size) {
+        if (club == null) return label("LPF", "brand-mark-text");
+        var stream = getClass().getResourceAsStream(club.getLogoResource());
+        if (stream == null) {
+            StackPane fallback = new StackPane(label(club.getAbreviatura(), "club-logo-fallback"));
+            fallback.setMinSize(size, size); fallback.setPrefSize(size, size);
+            fallback.setStyle("-fx-background-color: " + club.getColorPrimario() + "; -fx-background-radius: 12;");
+            return fallback;
+        }
+        ImageView image = new ImageView(new Image(stream));
+        image.setFitWidth(size); image.setFitHeight(size); image.setPreserveRatio(true);
+        image.getStyleClass().add("club-logo");
+        return image;
+    }
+
+    private ClubInfo clubActualInfo() {
+        return clubesService.buscarPorNombre(clubActual).orElse(clubesService.listarTodos().get(0));
+    }
+
+    private VBox shortcutCard(String title, String description, String actionText, Runnable action) {
+        VBox card = surfaceCard();
+        card.getStyleClass().add("shortcut-card");
+        Label titleLabel = label(title, "shortcut-title");
+        Label descriptionLabel = label(description, "feature-description");
+        descriptionLabel.setWrapText(true);
+        Button actionButton = secondaryButton(actionText);
+        actionButton.setOnAction(e -> action.run());
+        card.getChildren().addAll(titleLabel, descriptionLabel, actionButton);
+        HBox.setHgrow(card, Priority.ALWAYS);
+        card.setPrefWidth(300);
+        return card;
+    }
 
     private VBox field(String title, Node input) {
         Label caption = label(title, "field-label");
         input.getStyleClass().add("form-control");
-        input.maxWidth(Double.MAX_VALUE);
+        input.setStyle(input.getStyle());
         VBox box = new VBox(8, caption, input);
-        HBox.setHgrow(box, Priority.ALWAYS);
-        box.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(box, Priority.ALWAYS); box.setMaxWidth(Double.MAX_VALUE);
         return box;
     }
 
     private VBox surfaceCard() {
-        VBox card = new VBox(16);
+        VBox card = new VBox(15);
         card.getStyleClass().add("surface-card");
-        card.setPadding(new Insets(22));
-        return card;
-    }
-
-    private VBox featureCard(String number, String title, String description, String ignoredIcon) {
-        VBox card = surfaceCard();
-        card.getStyleClass().add("feature-card");
-        card.getChildren().addAll(
-                label(number, "feature-number"),
-                label(title, "feature-title"),
-                label(description, "feature-description"));
-        HBox.setHgrow(card, Priority.ALWAYS);
+        card.setPadding(new Insets(21));
         return card;
     }
 
     private VBox metricCard(String title, String value, String detail) {
-        VBox card = new VBox(6,
-                label(title, "metric-title"),
-                label(value, "metric-value"),
-                label(detail, "metric-detail"));
-        card.getStyleClass().add("metric-card");
-        card.setPadding(new Insets(17));
+        VBox card = new VBox(6, label(title, "metric-title"), label(value, "metric-value"), label(detail, "metric-detail"));
+        card.getStyleClass().add("metric-card"); card.setPadding(new Insets(16));
         HBox.setHgrow(card, Priority.ALWAYS);
         return card;
     }
@@ -818,80 +1037,56 @@ public class MainApp extends Application {
     }
 
     private HBox attributeRow(String name, int value) {
-        HBox row = new HBox(12);
+        HBox row = new HBox(10);
         row.setAlignment(Pos.CENTER_LEFT);
         Label title = label(name, "attribute-name");
-        Region gap = spacer();
         Label number = label(String.valueOf(value), "attribute-value");
         ProgressBar bar = new ProgressBar(Math.max(0, Math.min(1, value / 99.0)));
-        bar.getStyleClass().add("attribute-progress");
-        bar.setPrefWidth(170);
-        row.getChildren().addAll(title, gap, bar, number);
+        bar.getStyleClass().add("attribute-progress"); bar.setPrefWidth(150);
+        row.getChildren().addAll(title, spacer(), bar, number);
         return row;
     }
 
     private HBox detailLine(String name, String value) {
         HBox row = new HBox(12, label(name, "section-subtitle"), spacer(), label(value, "attribute-value"));
-        row.setAlignment(Pos.CENTER_LEFT);
-        return row;
+        row.setAlignment(Pos.CENTER_LEFT); return row;
     }
 
     private Label pill(String text) {
-        Label label = label(text, "pill-label");
-        label.getStyleClass().add("pill");
-        return label;
+        Label value = label(text, "pill-label"); value.getStyleClass().add("pill"); return value;
     }
 
     private Button primaryButton(String text) {
-        Button button = new Button(text);
-        button.getStyleClass().add("primary-button");
-        button.setMinHeight(46);
-        button.setPadding(new Insets(12, 20, 12, 20));
-        return button;
+        Button button = new Button(text); button.getStyleClass().add("primary-button");
+        button.setMinHeight(44); button.setPadding(new Insets(12, 18, 12, 18)); return button;
     }
 
     private Button secondaryButton(String text) {
-        Button button = new Button(text);
-        button.getStyleClass().add("secondary-button");
-        button.setMinHeight(46);
-        button.setPadding(new Insets(12, 20, 12, 20));
-        return button;
+        Button button = new Button(text); button.getStyleClass().add("secondary-button");
+        button.setMinHeight(44); button.setPadding(new Insets(12, 18, 12, 18)); return button;
     }
 
     private Label label(String text, String styleClass) {
-        Label label = new Label(text);
-        label.getStyleClass().add(styleClass);
-        return label;
+        Label value = new Label(text); value.getStyleClass().add(styleClass); return value;
     }
 
     private Region spacer() {
-        Region region = new Region();
-        HBox.setHgrow(region, Priority.ALWAYS);
-        return region;
+        Region region = new Region(); HBox.setHgrow(region, Priority.ALWAYS); return region;
     }
 
     private Region gap(double height) {
-        Region region = new Region();
-        region.setMinHeight(height);
-        region.setPrefHeight(height);
-        return region;
+        Region region = new Region(); region.setMinHeight(height); region.setPrefHeight(height); return region;
     }
 
     private String safeMessage(Exception ex) {
         return ex.getMessage() == null || ex.getMessage().isBlank()
-                ? "Revisá la conexión con MySQL y los datos ingresados."
-                : ex.getMessage();
+                ? "Revisá la conexión con MySQL y los datos ingresados." : ex.getMessage();
     }
 
     private void showAlert(Alert.AlertType type, String title, String message) {
-        Alert alert = new Alert(type);
-        alert.setTitle(title);
-        alert.setHeaderText(null);
-        alert.setContentText(message == null ? "" : message);
-        alert.showAndWait();
+        Alert alert = new Alert(type); alert.setTitle(title); alert.setHeaderText(null);
+        alert.setContentText(message == null ? "" : message); alert.showAndWait();
     }
 
-    public static void main(String[] args) {
-        launch(args);
-    }
+    public static void main(String[] args) { launch(args); }
 }

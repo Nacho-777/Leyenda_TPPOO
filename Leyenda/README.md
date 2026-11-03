@@ -1,45 +1,73 @@
-# Leyenda - simulador de carrera futbolística
+# LEYENDA — Modo Carrera de Fútbol
 
-Proyecto Java organizado con Maven, JDBC/MySQL, capas DAO y Service, CRUD y excepciones personalizadas.
+Proyecto JavaFX + Maven + MySQL. La interfaz permite crear futbolistas, elegir la dificultad de simulación, entrenar, avanzar temporadas, revisar competiciones y aceptar ofertas de transferencia.
+
+## Requisitos
+
+- JDK 27 (el `pom.xml` está configurado para Java 27 y JavaFX 27).
+- IntelliJ IDEA con soporte Maven.
+- MySQL o MariaDB encendido.
+
+## Ejecutar en IntelliJ
+
+1. Abrí la carpeta raíz que contiene `pom.xml` como proyecto Maven.
+2. Verificá que el Project SDK y el JRE de Maven sean JDK 27.
+3. Recargá Maven.
+4. Revisá el puerto, usuario y contraseña en `src/main/java/util/Conexion.java`.
+5. Si es una instalación nueva, importá `sql/leyenda.sql` en phpMyAdmin. Si ya tenés la base `leyenda` y querés conservar tus jugadores, ejecutá solamente `sql/actualizar_equipos_2026.sql` después de seleccionar la base.
+6. En Maven, ejecutá `Plugins > javafx > javafx:run`.
+
+La clase de entrada visual es `ui.MainApp`. El modo consola anterior sigue disponible desde `app.Main`.
 
 ## Estructura
 
-- `src/main/java/app`: punto de entrada (`Main`).
-- `src/main/java/model`: `Jugador` y sus subclases, e interfaz `Entrenable`.
-- `src/main/java/dao`: contrato del DAO.
-- `src/main/java/dao/impl`: consultas SQL y mapeo de subclases.
-- `src/main/java/service`: lógica de validación, operaciones del juego y estadísticas.
-- `src/main/java/exceptions`: excepciones de las reglas del TP.
-- `src/main/java/util`: conexión a MySQL.
-- `sql/leyenda.sql`: script para una base nueva.
+- `app`: modo consola anterior.
+- `ui`: interfaz JavaFX.
+- `model`: futbolista, subclases, clubes, ofertas y resultados.
+- `dao` / `dao.impl`: CRUD de jugadores y consultas MySQL.
+- `service`: validaciones, desarrollo, estadísticas, clubes, transferencias y competiciones.
+- `exceptions`: excepciones personalizadas.
+- `util`: conexión JDBC.
+- `src/main/resources/styles`: tema visual azul/celeste.
+- `src/main/resources/images/clubs`: insignias estilizadas locales para los clubes.
+- `sql/leyenda.sql`: estructura de la BDD y carga inicial (incluye dos jugadores de ejemplo del volcado original).
+- `sql/actualizar_equipos_2026.sql`: agrega/actualiza solamente los 30 equipos sin tocar jugadores existentes.
 
-## Preparar MySQL
+## Funciones incluidas
 
-1. Iniciá MySQL/MariaDB.
-2. En phpMyAdmin, importá `sql/leyenda.sql`. El archivo crea y selecciona la base `leyenda`.
-3. Abrí `src/main/java/util/Conexion.java` y verificá el puerto, el usuario y la contraseña. La configuración incluida es `localhost:3306`, usuario `root` y contraseña vacía. Si tu servidor usa otro puerto, cambiá la URL.
-4. En IntelliJ, abrí la carpeta que contiene `pom.xml` como proyecto Maven y recargá Maven para descargar Connector/J.
-5. Ejecutá `app.Main`.
+- Dificultades: difícil (1 temporada por avance), normal (2) y fácil (4).
+- Edad de carrera de 16 a 40 años.
+- Entrenamientos: velocidad, definición, pase/visión, regate/control, fuerza, resistencia, marcaje/entradas, centros, técnica avanzada, preparación física, análisis táctico, entrenamiento intensivo, mentoría, cabezazo y atajadas (según posición), además de descanso.
+- El OVR puede mejorar por entrenamientos, mentoría, temporadas destacadas, títulos y Balón de Oro, con tope de 99. Desde los 30 años ya no sube y empieza el declive.
+- Mercado de pases con ofertas por reputación y nivel del futbolista. Aceptar una oferta actualiza el club y valor del jugador en MySQL.
+- Competiciones nacionales simuladas: Apertura, Clausura, Copa Argentina, tabla anual/Campeón de Liga y supercopas cuando corresponda.
+- Competiciones internacionales: Libertadores o Sudamericana según clasificación simulada. La Recopa Sudamericana se habilita en la temporada siguiente cuando se gana una copa continental.
+- Historial de competiciones durante la sesión.
+- Catálogo de 30 equipos de Primera División argentina 2026, con insignias de diseño local.
 
-> Si ya existe una tabla `jugadores` de una versión anterior, `CREATE TABLE IF NOT EXISTS` no la modifica. Hacé una copia de seguridad antes de cambiar una tabla existente. Para probar desde cero, usá una base vacía o aplicá la estructura del script manualmente.
+## Clubes incluidos (Primera División 2026)
 
-## CRUD
+Aldosivi, Argentinos Juniors, Atlético Tucumán, Banfield, Barracas Central, Belgrano, Boca Juniors, Central Córdoba, Defensa y Justicia, Deportivo Riestra, Estudiantes de La Plata, Estudiantes de Río Cuarto, Gimnasia de La Plata, Gimnasia de Mendoza, Huracán, Independiente, Independiente Rivadavia, Instituto, Lanús, Newell's Old Boys, Platense, Racing Club, River Plate, Rosario Central, San Lorenzo, Sarmiento, Talleres, Tigre, Unión y Vélez Sarsfield.
 
-`JugadorDAO` declara `insertar`, `buscarPorId`, `listar`, `actualizar`, `eliminar` y una consulta auxiliar para comprobar dorsales. `JugadorDaoImpl` implementa las operaciones con `PreparedStatement`. `JugadorServiceImpl` aplica las validaciones del TP antes de acceder al DAO.
+## Importante antes de importar SQL
 
-## Excepciones del TP
+Si ya existe tu base `leyenda` con jugadores guardados, no importes encima todo `leyenda.sql` sin hacer una copia de seguridad. Para actualizar el catálogo de equipos, usá `actualizar_equipos_2026.sql`; no modifica la tabla `jugadores`.
 
-- `EdadInvalidaException`: edad de 16 a 40.
-- `OvrInvalidoException`: OVR de 1 a 99.
-- `PrecioInvalidoException`: precio no negativo.
-- `ResistenciaInvalidaException`: resistencia de 1 a 99.
-- `DorsalOcupadoException`: dorsal de 1 a 99 y único en la tabla.
+## Importante sobre los escudos
 
+Los PNG de `images/clubs` son insignias estilizadas propias para el videojuego, con colores e iniciales representativas. No son los escudos oficiales de los clubes. Se pueden reemplazar por imágenes oficiales autorizadas conservando los nombres de archivo.
 
-## Modo carrera: progresión y eventos
+## Persistencia y límites actuales
 
-- Los entrenamientos disponibles son velocidad, definición, pase y visión, regate y control, fuerza, resistencia, marcaje y entradas y, para arqueros, atajadas. También se puede elegir descanso.
-- Antes de los 30 años, entrenar puede otorgar +1 OVR. Algunos eventos positivos también pueden impulsar la valoración.
-- Desde los 30 años el OVR nunca aumenta. Cada temporada se aplica un desgaste base y las temporadas de bajo rendimiento pueden acelerar la caída. Una gran temporada ayuda a conservar atributos físicos, pero no elimina el declive del OVR.
-- Los eventos aleatorios incluyen molestias musculares, recuperación, consejos de referentes, planes físicos, entrenamientos extra y rachas de confianza. Cada evento modifica atributos, resistencia o valoración.
-- Los cambios de atributos, edad y OVR se guardan mediante el DAO existente en MySQL.
+- El jugador, su club, atributos, OVR y valor de mercado se guardan en MySQL.
+- El historial de temporadas/competiciones y la dificultad seleccionada se mantienen en memoria mientras la aplicación está abierta. Todavía no hay guardado completo de una partida para cerrarla y retomarla más tarde.
+- La clasificación a torneos y los resultados están simplificados para el videojuego; no son un fixture oficial ni una predicción deportiva.
+- La reputación de cada club es una escala interna del juego, no un ranking oficial.
+
+## Referencias para la temporada 2026
+
+- AFA, sorteo y grupos de la Liga Profesional 2026: https://www.afa.com.ar/es/posts/sorteo-de-la-liga-profesional-2026-se-definen-los-grupos-del-torneo-apertura-y-torneo-clausura
+- LPF, competencias previstas para 2026: https://www.lpf.org.ar/notas/institucional/2025/11/20/las-competencias-de-2026/
+- Reglamento LPF Primera División 2026: https://www.ligaprofesional.ar/wp-content/uploads/2026/01/Reglamento-Torneos-LPF-Primera-2026-1.pdf
+
+La simulación de temporadas toma como referencia esas competiciones, pero simplifica sus formatos y clasificaciones para que funcionen como modo carrera.

@@ -108,10 +108,48 @@ public class JugadorServiceImpl implements JugadorService {
                 if (jugador instanceof Arquero a) {
                     a.setReflejos(Math.min(99, a.getReflejos() + 2));
                     a.setAtajadas(Math.min(99, a.getAtajadas() + 2));
+                    a.setJuegoConPies(Math.min(99, a.getJuegoConPies() + 1));
                 } else {
-                    jugador.setControl(Math.min(99, jugador.getControl() + 1));
-                    jugador.setFuerza(Math.min(99, jugador.getFuerza() + 1));
+                    throw new IllegalArgumentException("El entrenamiento de atajadas es exclusivo para arqueros.");
                 }
+            }
+            case "cabezazo" -> {
+                if (jugador instanceof Defensa d) d.setCabezazo(Math.min(99, d.getCabezazo() + 3));
+                else if (jugador instanceof Delantero d) d.setCabezazo(Math.min(99, d.getCabezazo() + 3));
+                jugador.setFuerza(Math.min(99, jugador.getFuerza() + 1));
+            }
+            case "centros" -> {
+                jugador.setCentros(Math.min(99, jugador.getCentros() + 3));
+                jugador.setPase(Math.min(99, jugador.getPase() + 1));
+            }
+            case "técnica avanzada" -> {
+                jugador.setControl(Math.min(99, jugador.getControl() + 2));
+                jugador.setRegate(Math.min(99, jugador.getRegate() + 2));
+                jugador.setPase(Math.min(99, jugador.getPase() + 1));
+            }
+            case "preparación física" -> {
+                jugador.setFuerza(Math.min(99, jugador.getFuerza() + 2));
+                jugador.setResistencia(Math.min(99, jugador.getResistencia() + 2));
+                jugador.setVelocidad(Math.min(99, jugador.getVelocidad() + 1));
+            }
+            case "análisis táctico" -> {
+                jugador.setPase(Math.min(99, jugador.getPase() + 1));
+                jugador.setControl(Math.min(99, jugador.getControl() + 1));
+                jugador.setMarcaje(Math.min(99, jugador.getMarcaje() + 1));
+                if (jugador instanceof Mediocampista m) m.setVision(Math.min(99, m.getVision() + 2));
+            }
+            case "mentoría profesional" -> {
+                jugador.setControl(Math.min(99, jugador.getControl() + 1));
+                jugador.setPase(Math.min(99, jugador.getPase() + 1));
+                if (jugador instanceof Mediocampista m) m.setVision(Math.min(99, m.getVision() + 2));
+                if (jugador instanceof Arquero a) a.setJuegoConPies(Math.min(99, a.getJuegoConPies() + 2));
+                if (jugador.getEdad() < 25 && jugador.getOvr() < 99) jugador.setOvr(Math.min(99, jugador.getOvr() + 1));
+            }
+            case "entrenamiento intensivo" -> {
+                jugador.setVelocidad(Math.min(99, jugador.getVelocidad() + 1));
+                jugador.setFuerza(Math.min(99, jugador.getFuerza() + 1));
+                jugador.setResistencia(Math.min(99, jugador.getResistencia() + 1));
+                jugador.setControl(Math.min(99, jugador.getControl() + 1));
             }
             default -> throw new IllegalArgumentException("Elegí un enfoque de entrenamiento válido.");
         }
@@ -124,6 +162,29 @@ public class JugadorServiceImpl implements JugadorService {
         }
         if (jugador.getId() > 0) actualizarJugador(jugador);
         return mensaje;
+    }
+
+    /** Premia temporadas sobresalientes: títulos, premios y producción ofensiva pueden impulsar el OVR. */
+    public String aplicarProgresoPorRendimiento(Jugador jugador, ResultadoTemporada resultado) throws Exception {
+        if (jugador == null || resultado == null || jugador.getEdad() >= 30) {
+            return "";
+        }
+        int bonus = 0;
+        String motivo = "";
+        int produccion = resultado.getGoles() + resultado.getAsistencias();
+        boolean campeonCompeticion = resultado.getCompeticiones().stream().anyMatch(model.ResultadoCompeticion::isCampeon);
+        if (resultado.isBalonOro()) {
+            bonus = 2;
+            motivo = "Balón de Oro: +2 OVR.";
+        } else if (resultado.isCampeon() || campeonCompeticion || produccion >= 18 || resultado.getPartidos() >= 43) {
+            bonus = 1;
+            motivo = (resultado.isCampeon() || campeonCompeticion) ? "Temporada con título: +1 OVR." : "Rendimiento destacado: +1 OVR.";
+        }
+        if (bonus == 0 || jugador.getOvr() >= 99) return "";
+        int aplicado = Math.min(bonus, 99 - jugador.getOvr());
+        jugador.setOvr(jugador.getOvr() + aplicado);
+        if (jugador.getId() > 0) actualizarJugador(jugador);
+        return motivo;
     }
 
     /** Aplica envejecimiento anual. Desde los 30 el OVR nunca aumenta y cae según edad y rendimiento. */
