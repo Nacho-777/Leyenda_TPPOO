@@ -2,7 +2,7 @@ package service;
 
 import dao.JugadorDAO;
 import dao.impl.JugadorDaoImpl;
-import exceptions.DorsalOcupadoException;
+import exceptions.DorsalInvalidoException;
 import exceptions.EdadInvalidaException;
 import exceptions.OvrInvalidoException;
 import exceptions.PrecioInvalidoException;
@@ -34,8 +34,8 @@ public class JugadorServiceImpl implements JugadorService {
 
     @Override
     public int crearJugador(Jugador jugador) throws EdadInvalidaException, OvrInvalidoException,
-            PrecioInvalidoException, ResistenciaInvalidaException, DorsalOcupadoException, SQLException {
-        validarJugador(jugador, 0);
+            PrecioInvalidoException, ResistenciaInvalidaException, DorsalInvalidoException, SQLException {
+        validarJugador(jugador);
         int id = jugadorDAO.insertar(jugador);
         System.out.println("Jugador guardado correctamente. ID: " + id);
         return id;
@@ -53,11 +53,11 @@ public class JugadorServiceImpl implements JugadorService {
 
     @Override
     public void actualizarJugador(Jugador jugador) throws EdadInvalidaException, OvrInvalidoException,
-            PrecioInvalidoException, ResistenciaInvalidaException, DorsalOcupadoException, SQLException {
+            PrecioInvalidoException, ResistenciaInvalidaException, DorsalInvalidoException, SQLException {
         if (jugador == null || jugador.getId() <= 0) {
             throw new IllegalArgumentException("Para actualizar se necesita un jugador con ID válido.");
         }
-        validarJugador(jugador, jugador.getId());
+        validarJugador(jugador);
         jugadorDAO.actualizar(jugador);
     }
 
@@ -68,7 +68,7 @@ public class JugadorServiceImpl implements JugadorService {
 
     @Override
     public void entrenarJugador(Entrenable entrenable) throws EdadInvalidaException, OvrInvalidoException,
-            PrecioInvalidoException, ResistenciaInvalidaException, DorsalOcupadoException, SQLException {
+            PrecioInvalidoException, ResistenciaInvalidaException, DorsalInvalidoException, SQLException {
         if (entrenable == null) {
             throw new IllegalArgumentException("No se puede entrenar un objeto null.");
         }
@@ -79,89 +79,142 @@ public class JugadorServiceImpl implements JugadorService {
         }
     }
 
-    /** Entrenamiento elegido por el usuario. El OVR solo puede crecer antes de los 30 años. */
+    /** Devuelve cinco planes de mejora específicos para la posición del futbolista. */
+    @Override
+    public List<String> obtenerEnfoquesEntrenamiento(Jugador jugador) {
+        if (jugador instanceof Arquero) {
+            return List.of("Reflejos", "Atajadas", "Salidas", "Juego con los pies", "Resistencia");
+        }
+        if (jugador instanceof Defensa) {
+            return List.of("Marcaje", "Entradas", "Cabezazo", "Fuerza", "Velocidad");
+        }
+        if (jugador instanceof Mediocampista) {
+            return List.of("Pase", "Visión", "Control", "Recuperación", "Resistencia");
+        }
+        if (jugador instanceof Delantero) {
+            return List.of("Remate", "Definición", "Regate", "Velocidad", "Cabezazo");
+        }
+        return List.of();
+    }
+
+    /**
+     * Entrenamiento especializado: cada posición puede elegir cinco atributos principales.
+     * Cada sesión suma +1 OVR hasta los 29 años; después siguen mejorando los atributos,
+     * pero el OVR queda sujeto al declive normal por edad.
+     */
     public String entrenarConEnfoque(Jugador jugador, String enfoque) throws Exception {
         if (jugador == null) throw new IllegalArgumentException("No hay un jugador activo.");
         String opcion = enfoque == null ? "" : enfoque.trim().toLowerCase(Locale.ROOT);
-        switch (opcion) {
-            case "velocidad" -> jugador.setVelocidad(Math.min(99, jugador.getVelocidad() + 2));
-            case "definición" -> {
-                jugador.setRemate(Math.min(99, jugador.getRemate() + 1));
-                jugador.setDefinicion(Math.min(99, jugador.getDefinicion() + 2));
-            }
-            case "pase y visión" -> {
-                jugador.setPase(Math.min(99, jugador.getPase() + 2));
-                jugador.setControl(Math.min(99, jugador.getControl() + 1));
-                if (jugador instanceof Mediocampista m) m.setVision(Math.min(99, m.getVision() + 2));
-            }
-            case "regate y control" -> {
-                jugador.setRegate(Math.min(99, jugador.getRegate() + 2));
-                jugador.setControl(Math.min(99, jugador.getControl() + 1));
-            }
-            case "fuerza" -> jugador.setFuerza(Math.min(99, jugador.getFuerza() + 2));
-            case "resistencia" -> jugador.setResistencia(Math.min(99, jugador.getResistencia() + 3));
-            case "marcaje y entradas" -> {
-                jugador.setMarcaje(Math.min(99, jugador.getMarcaje() + 2));
-                jugador.setEntradas(Math.min(99, jugador.getEntradas() + 2));
-            }
-            case "atajadas" -> {
-                if (jugador instanceof Arquero a) {
-                    a.setReflejos(Math.min(99, a.getReflejos() + 2));
-                    a.setAtajadas(Math.min(99, a.getAtajadas() + 2));
-                    a.setJuegoConPies(Math.min(99, a.getJuegoConPies() + 1));
-                } else {
-                    throw new IllegalArgumentException("El entrenamiento de atajadas es exclusivo para arqueros.");
+        boolean aplicado = true;
+
+        if (jugador instanceof Arquero arquero) {
+            switch (opcion) {
+                case "reflejos" -> arquero.setReflejos(mejorar(arquero.getReflejos(), 3));
+                case "atajadas" -> arquero.setAtajadas(mejorar(arquero.getAtajadas(), 3));
+                case "salidas" -> arquero.setSalida(mejorar(arquero.getSalida(), 3));
+                case "juego con los pies" -> {
+                    arquero.setJuegoConPies(mejorar(arquero.getJuegoConPies(), 3));
+                    jugador.setPase(mejorar(jugador.getPase(), 1));
                 }
+                case "resistencia" -> {
+                    jugador.setResistencia(mejorar(jugador.getResistencia(), 3));
+                    jugador.setFuerza(mejorar(jugador.getFuerza(), 1));
+                }
+                default -> aplicado = false;
             }
-            case "cabezazo" -> {
-                if (jugador instanceof Defensa d) d.setCabezazo(Math.min(99, d.getCabezazo() + 3));
-                else if (jugador instanceof Delantero d) d.setCabezazo(Math.min(99, d.getCabezazo() + 3));
-                jugador.setFuerza(Math.min(99, jugador.getFuerza() + 1));
+        } else if (jugador instanceof Defensa defensa) {
+            switch (opcion) {
+                case "marcaje" -> {
+                    jugador.setMarcaje(mejorar(jugador.getMarcaje(), 3));
+                    jugador.setEntradas(mejorar(jugador.getEntradas(), 1));
+                }
+                case "entradas" -> {
+                    jugador.setEntradas(mejorar(jugador.getEntradas(), 3));
+                    jugador.setMarcaje(mejorar(jugador.getMarcaje(), 1));
+                }
+                case "cabezazo" -> {
+                    defensa.setCabezazo(mejorar(defensa.getCabezazo(), 3));
+                    jugador.setFuerza(mejorar(jugador.getFuerza(), 1));
+                }
+                case "fuerza" -> {
+                    jugador.setFuerza(mejorar(jugador.getFuerza(), 3));
+                    jugador.setResistencia(mejorar(jugador.getResistencia(), 1));
+                }
+                case "velocidad" -> {
+                    jugador.setVelocidad(mejorar(jugador.getVelocidad(), 3));
+                    jugador.setResistencia(mejorar(jugador.getResistencia(), 1));
+                }
+                default -> aplicado = false;
             }
-            case "centros" -> {
-                jugador.setCentros(Math.min(99, jugador.getCentros() + 3));
-                jugador.setPase(Math.min(99, jugador.getPase() + 1));
+        } else if (jugador instanceof Mediocampista medio) {
+            switch (opcion) {
+                case "pase" -> {
+                    jugador.setPase(mejorar(jugador.getPase(), 3));
+                    jugador.setControl(mejorar(jugador.getControl(), 1));
+                }
+                case "visión" -> {
+                    medio.setVision(mejorar(medio.getVision(), 3));
+                    jugador.setPase(mejorar(jugador.getPase(), 1));
+                }
+                case "control" -> {
+                    jugador.setControl(mejorar(jugador.getControl(), 3));
+                    jugador.setRegate(mejorar(jugador.getRegate(), 1));
+                }
+                case "recuperación" -> {
+                    medio.setRecuperacion(mejorar(medio.getRecuperacion(), 3));
+                    jugador.setMarcaje(mejorar(jugador.getMarcaje(), 1));
+                }
+                case "resistencia" -> {
+                    jugador.setResistencia(mejorar(jugador.getResistencia(), 3));
+                    jugador.setFuerza(mejorar(jugador.getFuerza(), 1));
+                }
+                default -> aplicado = false;
             }
-            case "técnica avanzada" -> {
-                jugador.setControl(Math.min(99, jugador.getControl() + 2));
-                jugador.setRegate(Math.min(99, jugador.getRegate() + 2));
-                jugador.setPase(Math.min(99, jugador.getPase() + 1));
+        } else if (jugador instanceof Delantero delantero) {
+            switch (opcion) {
+                case "remate" -> {
+                    jugador.setRemate(mejorar(jugador.getRemate(), 3));
+                    jugador.setDefinicion(mejorar(jugador.getDefinicion(), 1));
+                }
+                case "definición" -> {
+                    jugador.setDefinicion(mejorar(jugador.getDefinicion(), 3));
+                    jugador.setRemate(mejorar(jugador.getRemate(), 1));
+                }
+                case "regate" -> {
+                    jugador.setRegate(mejorar(jugador.getRegate(), 3));
+                    jugador.setControl(mejorar(jugador.getControl(), 1));
+                }
+                case "velocidad" -> {
+                    jugador.setVelocidad(mejorar(jugador.getVelocidad(), 3));
+                    jugador.setRegate(mejorar(jugador.getRegate(), 1));
+                }
+                case "cabezazo" -> {
+                    delantero.setCabezazo(mejorar(delantero.getCabezazo(), 3));
+                    jugador.setFuerza(mejorar(jugador.getFuerza(), 1));
+                }
+                default -> aplicado = false;
             }
-            case "preparación física" -> {
-                jugador.setFuerza(Math.min(99, jugador.getFuerza() + 2));
-                jugador.setResistencia(Math.min(99, jugador.getResistencia() + 2));
-                jugador.setVelocidad(Math.min(99, jugador.getVelocidad() + 1));
-            }
-            case "análisis táctico" -> {
-                jugador.setPase(Math.min(99, jugador.getPase() + 1));
-                jugador.setControl(Math.min(99, jugador.getControl() + 1));
-                jugador.setMarcaje(Math.min(99, jugador.getMarcaje() + 1));
-                if (jugador instanceof Mediocampista m) m.setVision(Math.min(99, m.getVision() + 2));
-            }
-            case "mentoría profesional" -> {
-                jugador.setControl(Math.min(99, jugador.getControl() + 1));
-                jugador.setPase(Math.min(99, jugador.getPase() + 1));
-                if (jugador instanceof Mediocampista m) m.setVision(Math.min(99, m.getVision() + 2));
-                if (jugador instanceof Arquero a) a.setJuegoConPies(Math.min(99, a.getJuegoConPies() + 2));
-                if (jugador.getEdad() < 25 && jugador.getOvr() < 99) jugador.setOvr(Math.min(99, jugador.getOvr() + 1));
-            }
-            case "entrenamiento intensivo" -> {
-                jugador.setVelocidad(Math.min(99, jugador.getVelocidad() + 1));
-                jugador.setFuerza(Math.min(99, jugador.getFuerza() + 1));
-                jugador.setResistencia(Math.min(99, jugador.getResistencia() + 1));
-                jugador.setControl(Math.min(99, jugador.getControl() + 1));
-            }
-            default -> throw new IllegalArgumentException("Elegí un enfoque de entrenamiento válido.");
+        } else {
+            aplicado = false;
         }
+
+        if (!aplicado) {
+            throw new IllegalArgumentException("Ese entrenamiento no corresponde a tu posición. Elegí una de las cinco opciones disponibles.");
+        }
+
         String mensaje;
         if (jugador.getEdad() < 30 && jugador.getOvr() < 99) {
             jugador.setOvr(Math.min(99, jugador.getOvr() + 1));
-            mensaje = "Entrenamiento de " + enfoque + ": mejoraron tus atributos y ganaste +1 OVR.";
+            mensaje = "Entrenamiento de " + enfoque + ": atributos principales mejorados y +1 OVR.";
         } else {
-            mensaje = "Entrenamiento de " + enfoque + ": mejoraron tus atributos. A partir de los 30, el OVR ya no aumenta.";
+            mensaje = "Entrenamiento de " + enfoque + ": mejoraron tus atributos. El OVR ya está en etapa de declive por edad.";
         }
         if (jugador.getId() > 0) actualizarJugador(jugador);
         return mensaje;
+    }
+
+    private int mejorar(int actual, int puntos) {
+        return Math.min(99, actual + puntos);
     }
 
     /** Premia temporadas sobresalientes: títulos, premios y producción ofensiva pueden impulsar el OVR. */
@@ -215,7 +268,7 @@ public class JugadorServiceImpl implements JugadorService {
 
     @Override
     public void tomarDecision(int id, String decision) throws EdadInvalidaException, OvrInvalidoException,
-            PrecioInvalidoException, ResistenciaInvalidaException, DorsalOcupadoException, SQLException {
+            PrecioInvalidoException, ResistenciaInvalidaException, DorsalInvalidoException, SQLException {
         Jugador jugador = exigirJugador(id);
         String opcion = decision == null ? "" : decision.trim().toLowerCase(Locale.ROOT);
         if (opcion.equals("entrenar")) {
@@ -229,7 +282,7 @@ public class JugadorServiceImpl implements JugadorService {
 
     @Override
     public void subirOVR(int id, int puntos) throws EdadInvalidaException, OvrInvalidoException,
-            PrecioInvalidoException, ResistenciaInvalidaException, DorsalOcupadoException, SQLException {
+            PrecioInvalidoException, ResistenciaInvalidaException, DorsalInvalidoException, SQLException {
         Jugador jugador = exigirJugador(id);
         if (puntos > 0 && jugador.getEdad() >= 30) {
             throw new OvrInvalidoException("A partir de los 30 años el OVR ya no puede aumentar.");
@@ -262,9 +315,9 @@ public class JugadorServiceImpl implements JugadorService {
         estadisticasService.mostrarResumenCarrera(jugador);
     }
 
-    private void validarJugador(Jugador jugador, int idExcluir) throws EdadInvalidaException,
+    private void validarJugador(Jugador jugador) throws EdadInvalidaException,
             OvrInvalidoException, PrecioInvalidoException, ResistenciaInvalidaException,
-            DorsalOcupadoException, SQLException {
+            DorsalInvalidoException, SQLException {
         if (jugador == null) {
             throw new IllegalArgumentException("El jugador no puede ser null.");
         }
@@ -287,10 +340,7 @@ public class JugadorServiceImpl implements JugadorService {
             throw new ResistenciaInvalidaException("La resistencia debe estar entre 1 y 99.");
         }
         if (jugador.getDorsal() < 1 || jugador.getDorsal() > 99) {
-            throw new DorsalOcupadoException("El dorsal debe estar entre 1 y 99.");
-        }
-        if (jugadorDAO.existeDorsal(jugador.getDorsal(), idExcluir)) {
-            throw new DorsalOcupadoException("El dorsal " + jugador.getDorsal() + " ya está ocupado.");
+            throw new DorsalInvalidoException("El dorsal debe estar entre 1 y 99.");
         }
         if (!(jugador instanceof Arquero || jugador instanceof Defensa
                 || jugador instanceof Mediocampista || jugador instanceof Delantero)) {

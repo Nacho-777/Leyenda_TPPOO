@@ -5,47 +5,91 @@ import model.Jugador;
 import model.OfertaTransferencia;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
 
-/** Genera ofertas de clubes de Primera según el nivel del futbolista. */
+/** Genera ofertas realistas de clubes argentinos y europeos según el nivel del futbolista. */
 public class MercadoPasesService {
     private final ClubesService clubesService;
-    public MercadoPasesService(ClubesService clubesService) { this.clubesService = clubesService; }
+
+    public MercadoPasesService(ClubesService clubesService) {
+        this.clubesService = clubesService;
+    }
 
     public List<OfertaTransferencia> generarOfertas(Jugador jugador, String clubActual, Random random) {
         if (jugador == null) return List.of();
         Random rng = random == null ? new Random() : random;
-        int reputacionMinima = jugador.getOvr() >= 85 ? 3 : jugador.getOvr() >= 72 ? 2 : 1;
-        int reputacionMaxima = jugador.getOvr() >= 90 ? 5 : jugador.getOvr() >= 80 ? 5 : jugador.getOvr() >= 65 ? 4 : 3;
-        List<ClubInfo> candidatos = new ArrayList<>();
-        for (ClubInfo club : clubesService.listarTodos()) {
-            if (!club.getNombre().equalsIgnoreCase(clubActual)
-                    && club.getReputacion() >= reputacionMinima
-                    && club.getReputacion() <= reputacionMaxima) candidatos.add(club);
+        List<ClubInfo> todos = clubesService.listarTodos();
+        ClubInfo actual = clubesService.buscarPorNombre(clubActual).orElse(null);
+        String paisActual = actual == null ? "Argentina" : actual.getPais();
+        int ovr = jugador.getOvr();
+
+        // A mayor OVR, aparecen proyectos de mayor reputación y más opciones internacionales.
+        int reputacionMaxima = ovr >= 88 ? 5 : ovr >= 76 ? 5 : ovr >= 62 ? 4 : 3;
+        List<ClubInfo> nacionales = new ArrayList<>();
+        List<ClubInfo> internacionales = new ArrayList<>();
+        for (ClubInfo club : todos) {
+            if (club.getNombre().equalsIgnoreCase(clubActual)) continue;
+            if (club.getReputacion() > reputacionMaxima) continue;
+            if (club.getPais().equalsIgnoreCase(paisActual)) nacionales.add(club);
+            else internacionales.add(club);
         }
-        // Si el nivel es muy bajo o el jugador está en el club más grande, no dejar el mercado vacío.
-        if (candidatos.size() < 3) {
-            for (ClubInfo club : clubesService.listarTodos()) {
-                if (!club.getNombre().equalsIgnoreCase(clubActual) && !candidatos.contains(club)) candidatos.add(club);
+
+        Collections.shuffle(nacionales, rng);
+        Collections.shuffle(internacionales, rng);
+
+        int cuposInternacionales = ovr >= 85 ? 3 : ovr >= 70 ? 2 : 1;
+        List<ClubInfo> seleccionados = new ArrayList<>();
+        tomar(internacionales, seleccionados, cuposInternacionales);
+        tomar(nacionales, seleccionados, 5 - seleccionados.size());
+
+        // Si una liga no tiene suficientes candidatos para ese OVR, completar sin repetir clubes.
+        if (seleccionados.size() < 5) {
+            List<ClubInfo> resto = new ArrayList<>();
+            for (ClubInfo club : todos) {
+                if (!club.getNombre().equalsIgnoreCase(clubActual) && !seleccionados.contains(club)) {
+                    resto.add(club);
+                }
             }
+            Collections.shuffle(resto, rng);
+            tomar(resto, seleccionados, 5 - seleccionados.size());
         }
-        java.util.Collections.shuffle(candidatos, rng);
+
         List<OfertaTransferencia> ofertas = new ArrayList<>();
-        for (ClubInfo club : candidatos.stream().limit(5).toList()) {
-            double factor = 0.85 + club.getReputacion() * 0.055 + rng.nextDouble() * 0.12;
-            double valor = Math.max(100_000, jugador.getPrecio() * factor);
-            int salario = Math.max(18_000, jugador.getOvr() * 7_500 + club.getReputacion() * 18_000 + rng.nextInt(30_000));
+        for (ClubInfo club : seleccionados) {
+            double primaReputacion = 0.82 + club.getReputacion() * 0.065;
+            double primaInternacional = club.getPais().equalsIgnoreCase(paisActual) ? 1.0 : 1.12;
+            double variacion = 0.94 + rng.nextDouble() * 0.18;
+            double valor = Math.max(100_000, jugador.getPrecio() * primaReputacion * primaInternacional * variacion);
+            int salario = Math.max(18_000,
+                    ovr * 7_500 + club.getReputacion() * 18_000 + (club.getPais().equalsIgnoreCase(paisActual) ? 0 : 35_000)
+                            + rng.nextInt(30_000));
             int contrato = 2 + rng.nextInt(3);
-            String motivo = club.getReputacion() >= 4
-                    ? "Te busca para competir por títulos y torneos continentales."
-                    : club.getReputacion() == 3
-                    ? "Quiere reforzar el plantel con un jugador de tu proyección."
-                    : "Te ofrece continuidad y protagonismo en el primer equipo.";
+            String motivo;
+            if (!club.getPais().equalsIgnoreCase(paisActual)) {
+                motivo = "Quiere llevarte a otra liga y darte una oportunidad internacional.";
+            } else if (club.getReputacion() >= 4) {
+                motivo = "Te busca para competir por títulos y torneos continentales.";
+            } else if (club.getReputacion() == 3) {
+                motivo = "Quiere reforzar el plantel con un jugador de tu proyección.";
+            } else {
+                motivo = "Te ofrece continuidad y protagonismo en el primer equipo.";
+            }
             ofertas.add(new OfertaTransferencia(club, valor, salario, contrato, motivo));
         }
         ofertas.sort(Comparator.comparingInt((OfertaTransferencia o) -> o.getClub().getReputacion()).reversed());
         return ofertas;
+    }
+
+    private void tomar(List<ClubInfo> origen, List<ClubInfo> destino, int cantidad) {
+        for (ClubInfo club : origen) {
+            if (cantidad <= 0) break;
+            if (!destino.contains(club)) {
+                destino.add(club);
+                cantidad--;
+            }
+        }
     }
 }

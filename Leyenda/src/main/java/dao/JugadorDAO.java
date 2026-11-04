@@ -11,5 +11,4 @@ public interface JugadorDAO {
     List<Jugador> listar() throws SQLException;
     void actualizar(Jugador jugador) throws SQLException;
     void eliminar(int id) throws SQLException;
-    boolean existeDorsal(int dorsal, int idExcluir) throws SQLException;
 }

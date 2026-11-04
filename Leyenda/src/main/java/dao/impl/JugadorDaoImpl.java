@@ -100,24 +100,6 @@ public class JugadorDaoImpl implements JugadorDAO {
         }
     }
 
-    @Override
-    public boolean existeDorsal(int dorsal, int idExcluir) throws SQLException {
-        String sql;
-        if (idExcluir > 0) {
-            sql = "SELECT COUNT(*) FROM jugadores WHERE dorsal = ? AND id <> ?";
-        } else {
-            sql = "SELECT COUNT(*) FROM jugadores WHERE dorsal = ?";
-        }
-        try (Connection con = Conexion.obtenerConexion();
-             PreparedStatement ps = con.prepareStatement(sql)) {
-            ps.setInt(1, dorsal);
-            if (idExcluir > 0) ps.setInt(2, idExcluir);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() && rs.getInt(1) > 0;
-            }
-        }
-    }
-
     private void cargarParametros(PreparedStatement ps, Jugador jugador) throws SQLException {
         ps.setString(1, jugador.getNombre());
         ps.setInt(2, jugador.getEdad());
