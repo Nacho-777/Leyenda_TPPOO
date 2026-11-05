@@ -1066,7 +1066,15 @@ public class MainApp extends Application {
         Button cups = secondaryButton("VER HISTORIAL DE COMPETICIONES"); cups.setOnAction(e -> showCompetitions());
         Button players = primaryButton("VER MIS FUTBOLISTAS"); players.setOnAction(e -> showSavedPlayers());
         Button home = secondaryButton("VOLVER AL INICIO"); home.setOnAction(e -> showHome());
-        page.getChildren().addAll(totals, finalCard, new HBox(10, home, cups, players));
+        Button challenge = primaryButton("JUGAR DESAFÍO FINAL 1 VS 1  ⚽");
+        challenge.setOnAction(e -> OneVsOneGame.start(stage, jugadorActual, clubActual, this::showCareerSummary));
+        challenge.setMaxWidth(Double.MAX_VALUE);
+        VBox challengeCard = surfaceCard();
+        challengeCard.getChildren().addAll(
+                label("EL ÚLTIMO CAPÍTULO", "eyebrow"),
+                label("Demostrá que sos una Leyenda. Enfrentá a los cinco grandes en un desafío 1 vs 1.", "page-subtitle"),
+                challenge);
+        page.getChildren().addAll(totals, finalCard, challengeCard, new HBox(10, home, cups, players));
         setPage(shell, page);
     }
 
