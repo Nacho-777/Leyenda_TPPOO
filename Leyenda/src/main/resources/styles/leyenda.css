@@ -180,3 +180,15 @@
 .market-offer-list { -fx-background-color: #081B2F; -fx-control-inner-background: #081B2F; -fx-border-color: #245477; }
 .market-offer-list .list-cell { -fx-background-color: #0B2036; -fx-text-fill: #EAF6FF; -fx-padding: 10; }
 .market-offer-list .list-cell:filled:selected { -fx-background-color: #164C57; -fx-text-fill: #9BFFC0; }
+
+
+/* Ajustes de legibilidad y adaptación a ventanas más pequeñas. */
+.page-scroll { -fx-background-color: #061326; -fx-background: #061326; }
+.page-content { -fx-fill-width: true; }
+.page-content > .label { -fx-wrap-text: true; }
+.button { -fx-wrap-text: true; }
+.metric-card { -fx-min-width: 150px; -fx-pref-width: 190px; }
+.shortcut-card { -fx-min-width: 250px; -fx-pref-width: 300px; }
+.offer-card { -fx-min-width: 260px; -fx-pref-width: 300px; }
+.competition-tile { -fx-min-width: 260px; }
+.text-area, .text-field, .combo-box { -fx-max-width: infinity; }

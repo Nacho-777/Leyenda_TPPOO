@@ -27,7 +27,9 @@ public class MercadoPasesService {
         int ovr = jugador.getOvr();
 
         // A mayor OVR, aparecen proyectos de mayor reputación y más opciones internacionales.
-        int reputacionMaxima = ovr >= 88 ? 5 : ovr >= 76 ? 5 : ovr >= 62 ? 4 : 3;
+        int calidad = (ovr * 2 + jugador.getVelocidad() + jugador.getRemate() + jugador.getPase()
+                + jugador.getRegate() + jugador.getFuerza() + jugador.getControl()) / 8;
+        int reputacionMaxima = calidad >= 88 ? 5 : calidad >= 80 ? 4 : calidad >= 70 ? 3 : 2;
         List<ClubInfo> nacionales = new ArrayList<>();
         List<ClubInfo> internacionales = new ArrayList<>();
         for (ClubInfo club : todos) {
@@ -40,22 +42,13 @@ public class MercadoPasesService {
         Collections.shuffle(nacionales, rng);
         Collections.shuffle(internacionales, rng);
 
-        int cuposInternacionales = ovr >= 85 ? 3 : ovr >= 70 ? 2 : 1;
+        int cuposInternacionales = calidad >= 85 ? 3 : calidad >= 72 ? 2 : 1;
         List<ClubInfo> seleccionados = new ArrayList<>();
         tomar(internacionales, seleccionados, cuposInternacionales);
         tomar(nacionales, seleccionados, 5 - seleccionados.size());
 
-        // Si una liga no tiene suficientes candidatos para ese OVR, completar sin repetir clubes.
-        if (seleccionados.size() < 5) {
-            List<ClubInfo> resto = new ArrayList<>();
-            for (ClubInfo club : todos) {
-                if (!club.getNombre().equalsIgnoreCase(clubActual) && !seleccionados.contains(club)) {
-                    resto.add(club);
-                }
-            }
-            Collections.shuffle(resto, rng);
-            tomar(resto, seleccionados, 5 - seleccionados.size());
-        }
+        // No se agregan clubes fuera del nivel permitido: es preferible mostrar menos ofertas
+        // antes que regalarle a un jugador de atributos bajos un fichaje de élite irreal.
 
         List<OfertaTransferencia> ofertas = new ArrayList<>();
         for (ClubInfo club : seleccionados) {

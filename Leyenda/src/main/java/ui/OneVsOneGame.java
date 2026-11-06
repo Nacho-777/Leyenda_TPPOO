@@ -8,9 +8,10 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.image.Image;
+import javafx.scene.input.KeyCode;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
-import javafx.scene.input.KeyCode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
@@ -20,10 +21,15 @@ import javafx.scene.text.Font;
 import javafx.stage.Stage;
 import javafx.util.Duration;
 import model.Jugador;
+import model.Defensa;
+import model.Delantero;
 
+import java.awt.Desktop;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.Consumer;
 
 /**
  * Desafío final 1 vs 1 de Leyenda. Mecánicas propias inspiradas en el género
@@ -51,7 +57,11 @@ public final class OneVsOneGame {
     private double playerX = 155, playerY = FLOOR - 76, playerVY;
     private double botX = 845, botY = FLOOR - 76, botVY;
     private double ballX = W / 2, ballY = FLOOR - 30, ballVX = 0, ballVY = 0;
-    private double playerCooldown, botCooldown, elapsed;
+    private double playerCooldown, botCooldown, botJumpCooldown, playerHeaderCooldown, botHeaderCooldown, elapsed;
+    private double ballStuckTimer;
+    // Pegá aquí una URL directa a un PNG/JPG de la pelota Trionda 2026. También acepta -Dleyenda.ballImageUrl=URL.
+    private static final String BALL_IMAGE_URL = System.getProperty("leyenda.ballImageUrl", "");
+    private final Image ballImage = loadBallImage();
     private boolean left, right, jump, shoot;
     private long lastFrame;
     private AnimationTimer timer;
@@ -60,6 +70,9 @@ public final class OneVsOneGame {
     private int aiLevel = 1;
     private String aiDescription = "LEYENDA";
     private boolean practiceFinished;
+    private boolean importantMatch;
+    private String importantMatchTitle = "PARTIDO IMPORTANTE";
+    private Consumer<Boolean> importantMatchResult;
 
     private OneVsOneGame(Stage stage, Jugador player, String club, Runnable onExit) {
         this.stage = stage;
@@ -70,6 +83,37 @@ public final class OneVsOneGame {
 
     public static void start(Stage stage, Jugador player, String club, Runnable onExit) {
         new OneVsOneGame(stage, player, club, onExit).showTutorial();
+    }
+
+    public static void startImportantMatch(Stage stage, Jugador player, String club,
+                                           String title, Consumer<Boolean> resultHandler, Runnable returnToPage) {
+        OneVsOneGame game = new OneVsOneGame(stage, player, club, returnToPage);
+        game.importantMatch = true;
+        game.importantMatchTitle = title == null ? "PARTIDO IMPORTANTE" : title;
+        game.importantMatchResult = resultHandler;
+        game.showImportantMatchIntro();
+    }
+
+    private void showImportantMatchIntro() {
+        BorderPane root = shell();
+        VBox box = new VBox(18);
+        box.setAlignment(Pos.CENTER);
+        box.setPadding(new Insets(36));
+        box.getChildren().addAll(
+                label("PARTIDO OFICIAL · " + java.time.LocalDate.now().getYear() + " · DIFICULTAD LEYENDA", 13, "#6CE5FF"),
+                label(importantMatchTitle, 32, "#F4FBFF"),
+                label(player.getNombre() + " · " + player.getOvr() + " OVR · " + club, 14, "#BBD6E8"),
+                label("Un solo partido de 90 segundos. Si ganás, registrás la victoria; si perdés, queda registrada la derrota.", 14, "#BBD6E8"),
+                label("← → mover   ·   ↑ saltar   ·   ESPACIO patear con el pie", 13, "#72E5FF"));
+        Button play = button("JUGAR PARTIDO  →", true);
+        play.setOnAction(e -> startMatch(false));
+        Button cancel = button("VOLVER A COMPETICIONES", false);
+        cancel.setOnAction(e -> onExit.run());
+        HBox actions = new HBox(12, cancel, play);
+        actions.setAlignment(Pos.CENTER);
+        box.getChildren().add(actions);
+        root.setCenter(box);
+        setScene(root);
     }
 
     private void showTutorial() {
@@ -102,8 +146,9 @@ public final class OneVsOneGame {
         actions.getChildren().addAll(back, begin);
         content.getChildren().addAll(eyebrow, title, subtitle, avatar, controls, rules, actions);
         root.setCenter(content);
-        Scene scene = new Scene(root, 1200, 760);
+        Scene scene = new Scene(root, Math.max(720, stage.getWidth()), Math.max(520, stage.getHeight()));
         scene.getStylesheets().add(css());
+        scene.setOnKeyPressed(e -> { if (e.getCode() == KeyCode.F11) stage.setFullScreen(!stage.isFullScreen()); });
         stage.setScene(scene);
         stage.setTitle("LEYENDA | Desafío final 1 vs 1");
         stage.show();
@@ -140,9 +185,9 @@ public final class OneVsOneGame {
         playerX = 155; playerY = FLOOR - 76; playerVY = 0;
         botX = 845; botY = FLOOR - 76; botVY = 0;
         resetBall();
-        playerCooldown = botCooldown = elapsed = 0;
+        playerCooldown = botCooldown = botJumpCooldown = playerHeaderCooldown = botHeaderCooldown = elapsed = ballStuckTimer = 0;
         left = right = jump = shoot = false;
-        aiLevel = isPractice ? 0 : calculateAiLevel();
+        aiLevel = isPractice ? 0 : importantMatch ? 3 : calculateAiLevel();
         aiDescription = isPractice ? "NORMAL · PRÁCTICA" : "LEYENDA · " + aiLabel();
         buildGameScene();
     }
@@ -163,24 +208,49 @@ public final class OneVsOneGame {
         BorderPane root = shell();
         VBox top = new VBox(8);
         top.setPadding(new Insets(14, 22, 10, 22));
-        HBox heading = new HBox(14);
+        HBox heading = new HBox(10);
         heading.setAlignment(Pos.CENTER_LEFT);
-        statusLabel = label(practice ? "PARTIDO DE PRÁCTICA" : "DESAFÍO LEYENDA · " + (nextOpponent + 1) + "/5  VS  " + OPPONENTS[nextOpponent], 14, "#7CE8FF");
+        statusLabel = label(practice ? "PARTIDO DE PRÁCTICA" : importantMatch ? importantMatchTitle : "DESAFÍO LEYENDA · " + (nextOpponent + 1) + "/5  VS  " + OPPONENTS[nextOpponent], 14, "#7CE8FF");
         scoreLabel = label("0  -  0", 27, "#F5FBFF");
         clockLabel = label("01:30", 20, "#72F0A4");
-        heading.getChildren().addAll(statusLabel, spacer(), label(player.getNombre().toUpperCase(Locale.ROOT), 11, "#C7DCEC"), scoreLabel,
-                label(practice ? "BOT" : OPPONENTS[nextOpponent], 11, "#C7DCEC"), spacer(), clockLabel);
+        Button music = button("♫  X MIL NOCHES", false);
+        music.setOnAction(e -> openYoutubeMusic());
+        Button exitMode = button("☰  SALIR DEL 1 VS 1", false);
+        exitMode.setOnAction(e -> {
+            stopTimer();
+            left = right = jump = shoot = false;
+            onExit.run();
+        });
+        heading.getChildren().addAll(statusLabel, spacer(), label(player.getNombre().toUpperCase(Locale.ROOT), 10, "#C7DCEC"), scoreLabel,
+                label(practice ? "BOT" : importantMatch ? "RIVAL" : OPPONENTS[nextOpponent], 10, "#C7DCEC"), clockLabel);
+        HBox toolbar = new HBox(10);
+        toolbar.setAlignment(Pos.CENTER_LEFT);
         Label instruction = label("← → MOVER   ·   ↑ SALTAR   ·   ESPACIO DISPARAR", 11, "#8EABC3");
-        top.getChildren().addAll(heading, instruction);
+        toolbar.getChildren().addAll(instruction, spacer(), music, exitMode);
+        top.getChildren().addAll(heading, toolbar);
         canvas = new Canvas(W, H);
-        StackPane arena = new StackPane(canvas);
-        arena.setPadding(new Insets(8, 22, 14, 22));
+        canvas.setManaged(false);
+        StackPane arena = new StackPane();
+        arena.setMinSize(0, 0);
+        Runnable scaleArena = () -> {
+            double availableW = Math.max(100, arena.getWidth());
+            double availableH = Math.max(100, arena.getHeight());
+            double scale = Math.min(availableW / W, availableH / H);
+            canvas.setScaleX(scale);
+            canvas.setScaleY(scale);
+            canvas.setLayoutX((availableW - W) / 2.0);
+            canvas.setLayoutY((availableH - H) / 2.0);
+        };
+        arena.getChildren().add(canvas);
+        arena.widthProperty().addListener((obs, oldValue, newValue) -> scaleArena.run());
+        arena.heightProperty().addListener((obs, oldValue, newValue) -> scaleArena.run());
         root.setTop(top);
         root.setCenter(arena);
-        Scene scene = new Scene(root, 1200, 760);
+        Scene scene = new Scene(root, Math.max(720, stage.getWidth()), Math.max(520, stage.getHeight()));
         scene.getStylesheets().add(css());
         scene.setOnKeyPressed(e -> {
             KeyCode code = e.getCode();
+            if (code == KeyCode.F11) { stage.setFullScreen(!stage.isFullScreen()); e.consume(); return; }
             if (code == KeyCode.LEFT || code == KeyCode.A) left = true;
             if (code == KeyCode.RIGHT || code == KeyCode.D) right = true;
             if (code == KeyCode.UP || code == KeyCode.W) jump = true;
@@ -194,7 +264,8 @@ public final class OneVsOneGame {
             if (code == KeyCode.SPACE) shoot = false;
         });
         stage.setScene(scene);
-        stage.setTitle("LEYENDA | " + (practice ? "Práctica 1 vs 1" : "Desafío Leyenda"));
+        stage.setTitle("LEYENDA | " + (practice ? "Práctica 1 vs 1" : importantMatch ? "Partido importante 1 vs 1" : "Desafío Leyenda"));
+        scaleArena.run();
         canvas.setFocusTraversable(true);
         canvas.requestFocus();
         draw();
@@ -215,6 +286,7 @@ public final class OneVsOneGame {
         elapsed += dt;
         remaining -= dt;
         playerCooldown = Math.max(0, playerCooldown - dt);
+        playerHeaderCooldown = Math.max(0, playerHeaderCooldown - dt);
         botCooldown = Math.max(0, botCooldown - dt);
 
         double speed = 245 + Math.max(0, player.getVelocidad() - 60) * 1.25;
@@ -248,27 +320,40 @@ public final class OneVsOneGame {
     }
 
     private void updateBot(double dt) {
+        botJumpCooldown = Math.max(0, botJumpCooldown - dt);
+        botHeaderCooldown = Math.max(0, botHeaderCooldown - dt);
         double difficultySpeed = aiLevel == 0 ? 175 : aiLevel == 1 ? 235 : aiLevel == 2 ? 275 : 315;
-        double targetX = ballX + (ballX > botX ? -35 : 35);
+        // El bot no persigue la pelota por encima del travesaño: vuelve a una posición defensiva.
+        boolean ballPlayable = ballY > 95 && ballY < FLOOR - 12;
+        double targetX = ballPlayable ? ballX + (ballX > botX ? -38 : 38) : W - 155;
+        targetX = clamp(targetX, W * 0.55, W - 52);
         if (Math.abs(targetX - botX) > 12) botX += Math.signum(targetX - botX) * difficultySpeed * dt;
         botX = clamp(botX, 52, W - 52);
-        if (ballY < FLOOR - 90 && Math.abs(ballX - botX) < (aiLevel >= 2 ? 145 : 105) && botY >= FLOOR - 77)
+
+        // Salta solo una vez por intento y únicamente si la pelota está a una altura alcanzable.
+        boolean reachableHeader = ballY > botY - 20 && ballY < botY + 45
+                && Math.abs(ballX - botX) < 92;
+        if (reachableHeader && botY >= FLOOR - 77 && botJumpCooldown <= 0) {
             botVY = -(aiLevel >= 2 ? 610 : 535);
+            botJumpCooldown = 1.15;
+        }
         botY += botVY * dt;
         botVY += 1450 * dt;
         if (botY > FLOOR - 77) { botY = FLOOR - 77; botVY = 0; }
 
-        double reaction = aiLevel == 0 ? 0.8 : aiLevel == 1 ? 0.55 : aiLevel == 2 ? 0.34 : 0.22;
-        if (botCooldown <= 0 && Math.abs(ballX - botX) < 100 && Math.abs(ballY - (botY + 35)) < 100
-                && elapsed % 1.0 > reaction) {
+        // Remate de bot exclusivamente desde el pie; nunca impulsa la pelota con el pecho/cuerpo.
+        double footX = botX - 27;
+        double footY = botY + 76;
+        if (botCooldown <= 0 && Math.abs(ballX - footX) < 54 && Math.abs(ballY - footY) < 34) {
             double power = aiLevel == 0 ? 390 : aiLevel == 1 ? 460 : aiLevel == 2 ? 530 : 600;
             ballVX = -power;
-            ballVY = -180 - aiLevel * 30;
+            ballVY = -115 - aiLevel * 24;
             botCooldown = aiLevel == 0 ? 1.0 : aiLevel == 1 ? 0.72 : 0.5;
         }
     }
 
     private void updateBall(double dt) {
+        double previousX = ballX;
         ballX += ballVX * dt;
         ballY += ballVY * dt;
         ballVY += 850 * dt;
@@ -276,35 +361,94 @@ public final class OneVsOneGame {
         if (ballY > FLOOR - 18) { ballY = FLOOR - 18; ballVY = -Math.abs(ballVY) * 0.62; }
         if (Math.abs(ballVY) < 35 && ballY >= FLOOR - 19) ballVY = 0;
 
-        // Arcos y goles.
-        if (ballX < 42 && ballY > FLOOR - 145) {
-            botGoals++; resetAfterGoal();
-        } else if (ballX > W - 42 && ballY > FLOOR - 145) {
-            userGoals++; resetAfterGoal();
-        } else {
-            if (ballX < 18 || ballX > W - 18) ballVX *= -0.75;
-            if (ballY < 18) { ballY = 18; ballVY = Math.abs(ballVY) * 0.7; }
+        final double goalTop = FLOOR - 150;
+        final double radius = 13;
+        // El gol se valida únicamente al cruzar la línea, con toda la pelota debajo del travesaño.
+        boolean crossedLeft = previousX >= 42 && ballX < 42 && ballVX < 0;
+        boolean crossedRight = previousX <= W - 42 && ballX > W - 42 && ballVX > 0;
+        boolean insideGoalHeight = ballY - radius >= goalTop && ballY + radius <= FLOOR;
+        if (crossedLeft && insideGoalHeight) {
+            botGoals++;
+            resetAfterGoal();
+            return;
         }
+        if (crossedRight && insideGoalHeight) {
+            userGoals++;
+            resetAfterGoal();
+            return;
+        }
+
+        // Si la pelota llega por arriba, el travesaño la devuelve: no puede caer luego y contar como gol.
+        // Travesaños blancos: si la pelota cruza por arriba, rebota hacia el campo y no puede
+        // quedarse suspendida encima del arco ni caer luego detrás de la línea para contar gol.
+        boolean overLeftGoal = ballX >= 0 && ballX <= 48 && ballY + radius >= goalTop - 2
+                && ballY < goalTop + 24;
+        boolean overRightGoal = ballX <= W && ballX >= W - 48 && ballY + radius >= goalTop - 2
+                && ballY < goalTop + 24;
+        if (overLeftGoal || overRightGoal) {
+            ballY = goalTop - radius - 2;
+            ballVY = -Math.max(190, Math.abs(ballVY) * 0.72);
+            ballVX = overLeftGoal ? Math.max(150, Math.abs(ballVX) * 0.65) : -Math.max(150, Math.abs(ballVX) * 0.65);
+        }
+        // Detección de pelota casi inmóvil en la zona alta: la devuelve al terreno de juego.
+        if (ballY < goalTop && Math.abs(ballVX) < 18 && Math.abs(ballVY) < 45) ballStuckTimer += dt;
+        else ballStuckTimer = 0;
+        if (ballStuckTimer > 0.85) {
+            ballY = Math.max(goalTop - 20, ballY);
+            ballVX = ballX < W / 2 ? 185 : -185;
+            ballVY = 230;
+            ballStuckTimer = 0;
+        }
+        // Red de seguridad: si por una velocidad extrema o un frame perdido la pelota
+        // atraviesa los límites, se repone en el centro en lugar de desaparecer.
+        if (ballX < -radius - 24 || ballX > W + radius + 24
+                || ballY < -radius - 24 || ballY > H + radius + 24
+                || !Double.isFinite(ballX) || !Double.isFinite(ballY)) {
+            resetBall();
+            return;
+        }
+        if (ballX < 18 || ballX > W - 18) {
+            ballX = clamp(ballX, 18, W - 18);
+            ballVX *= -0.75;
+        }
+        if (ballY < 18) { ballY = 18; ballVY = Math.abs(ballVY) * 0.7; }
     }
 
     private void collidePlayers() {
-        if (Math.abs(ballX - playerX) < 58 && Math.abs(ballY - (playerY + 35)) < 62) {
-            ballVX = Math.max(ballVX, 0) + (ballX >= playerX ? 110 : -90);
-            ballVY = -Math.max(130, Math.abs(playerVY) * 0.35 + 120);
+        // El cuerpo no dispara ni empuja la pelota: solo se permiten remates con el pie.
+        // El cabezazo es un contacto separado, habilitado por el atributo entrenado.
+        int header = headerSkill();
+        if (header >= 65) {
+            double headerRadius = 15 + (header - 65) * 0.18;
+            if (playerHeaderCooldown <= 0 && Math.abs(ballX - playerX) < 27 && ballY < playerY + 16
+                    && ballY > playerY - headerRadius) {
+                ballVX = Math.max(ballVX, 0) + 65 + header * 0.9;
+                ballVY = -Math.max(150, 115 + header * 1.8);
+                playerHeaderCooldown = 0.55;
+            }
         }
-        if (Math.abs(ballX - botX) < 58 && Math.abs(ballY - (botY + 35)) < 62) {
+        // La IA puede cabecear con una calidad media, sin convertir el contacto corporal en tiro.
+        if (botHeaderCooldown <= 0 && Math.abs(ballX - botX) < 25 && ballY < botY + 16 && ballY > botY - 12) {
             ballVX = Math.min(ballVX, 0) - 85;
-            ballVY = -Math.max(120, Math.abs(botVY) * 0.3 + 110);
+            ballVY = -190;
+            botHeaderCooldown = 0.55;
         }
     }
 
+    private int headerSkill() {
+        if (player instanceof Delantero d) return d.getCabezazo();
+        if (player instanceof Defensa d) return d.getCabezazo();
+        return 0;
+    }
+
     private void kickPlayer() {
-        if (Math.abs(ballX - playerX) < 112 && Math.abs(ballY - (playerY + 35)) < 112) {
-            double power = 410 + Math.max(0, player.getRemate() - 60) * 3.2
+        // El remate sale desde el pie adelantado, no desde la cabeza.
+        if (Math.abs(ballX - (playerX + 28)) < 58 && Math.abs(ballY - (playerY + 76)) < 34) {
+            double power = 430 + Math.max(0, player.getRemate() - 60) * 3.2
                     + Math.max(0, player.getFuerza() - 60) * 1.2;
             ballVX = power;
-            ballVY = -190 - Math.max(0, player.getDefinicion() - 60) * 2.2;
-            playerCooldown = 0.45;
+            ballVY = -95 - Math.max(0, player.getDefinicion() - 60) * 1.25;
+            playerCooldown = 0.42;
         }
     }
 
@@ -331,10 +475,37 @@ public final class OneVsOneGame {
             return;
         }
         boolean won = userGoals > botGoals;
+        if (importantMatch) {
+            if (importantMatchResult != null) importantMatchResult.accept(won);
+            showImportantMatchResult(won);
+            return;
+        }
         if (won) wins++; else losses++;
         matchLog.add(OPPONENTS[nextOpponent] + "  " + userGoals + " - " + botGoals + "  " + (won ? "VICTORIA" : "DERROTA"));
         nextOpponent++;
         showMatchResult(won);
+    }
+
+    private void showImportantMatchResult(boolean won) {
+        BorderPane root = shell();
+        VBox box = new VBox(18);
+        box.setAlignment(Pos.CENTER);
+        box.setPadding(new Insets(38));
+        boolean finalMatch = importantMatchTitle.toUpperCase(Locale.ROOT).contains("FINAL");
+        String headline = finalMatch ? (won ? "¡FELICIDADES, CAMPEÓN!" : "¡SUBCAMPEÓN! EN OTRO AÑO SERÁ")
+                : (won ? "¡PARTIDO GANADO!" : "PARTIDO PERDIDO");
+        String detail = finalMatch ? (won ? "Ganaste la final y levantaste el trofeo. Tu logro quedó registrado." : "Llegaste a la final y terminaste subcampeón. En otro año será.")
+                : (won ? "La victoria quedó registrada en tu historial." : "El resultado quedó registrado en tu historial.");
+        box.getChildren().addAll(
+                label(headline, 20, won ? "#75F0A4" : "#FFB477"),
+                label(userGoals + "  -  " + botGoals, 50, "#F4FBFF"),
+                label(importantMatchTitle, 22, "#8BEAFF"),
+                label(detail, 14, "#BBD6E8"));
+        Button back = button("VOLVER A COMPETICIONES  →", true);
+        back.setOnAction(e -> onExit.run());
+        box.getChildren().add(back);
+        root.setCenter(box);
+        setScene(root);
     }
 
     private void showPracticeResult() {
@@ -413,6 +584,7 @@ public final class OneVsOneGame {
         GraphicsContext g = canvas.getGraphicsContext2D();
         g.setFill(Color.web("#061326")); g.fillRect(0, 0, W, H);
         g.setFill(Color.web("#0B2944")); g.fillRoundRect(12, 12, W - 24, H - 24, 22, 22);
+        drawStadium(g);
         g.setStroke(Color.web("#2A6685")); g.setLineWidth(3);
         g.strokeRoundRect(28, 28, W - 56, H - 56, 18, 18);
         g.strokeLine(W / 2, 28, W / 2, FLOOR);
@@ -421,34 +593,107 @@ public final class OneVsOneGame {
         g.setStroke(Color.web("#6CE8A5")); g.setLineWidth(4);
         g.strokeRect(0, FLOOR - 150, 42, 150);
         g.strokeRect(W - 42, FLOOR - 150, 42, 150);
+        // Postes y travesaños blancos con red visible.
+        g.setStroke(Color.WHITE); g.setLineWidth(7);
+        g.strokeLine(4, FLOOR - 150, 42, FLOOR - 150); g.strokeLine(42, FLOOR - 150, 42, FLOOR);
+        g.strokeLine(W - 42, FLOOR - 150, W - 4, FLOOR - 150); g.strokeLine(W - 42, FLOOR - 150, W - 42, FLOOR);
+        g.setStroke(Color.color(1, 1, 1, 0.48)); g.setLineWidth(1);
+        for (int y = (int)(FLOOR - 140); y < FLOOR; y += 14) {
+            g.strokeLine(5, y, 40, y); g.strokeLine(W - 40, y, W - 5, y);
+        }
+        for (int x = 8; x < 42; x += 9) g.strokeLine(x, FLOOR - 148, x, FLOOR - 2);
+        for (int x = (int)W - 42; x < W - 5; x += 9) g.strokeLine(x, FLOOR - 148, x, FLOOR - 2);
         // Líneas de área y arcos.
         g.setStroke(Color.web("#6EAB94")); g.setLineWidth(2);
         g.strokeRect(42, FLOOR - 125, 105, 125);
         g.strokeRect(W - 147, FLOOR - 125, 105, 125);
         drawPlayer(g, playerX, playerY, true);
         drawPlayer(g, botX, botY, false);
-        g.setFill(Color.WHITE); g.fillOval(ballX - 13, ballY - 13, 26, 26);
-        g.setStroke(Color.web("#25384A")); g.setLineWidth(1.5); g.strokeOval(ballX - 13, ballY - 13, 26, 26);
+        if (ballImage != null && !ballImage.isError()) {
+            g.drawImage(ballImage, ballX - 15, ballY - 15, 30, 30);
+        } else {
+            g.setFill(Color.WHITE); g.fillOval(ballX - 13, ballY - 13, 26, 26);
+            g.setStroke(Color.web("#25384A")); g.setLineWidth(1.5); g.strokeOval(ballX - 13, ballY - 13, 26, 26);
+        }
         g.setFill(Color.web("#D7E9F5")); g.setFont(Font.font("Arial", 12));
         g.fillText(player.getNombre().toUpperCase(Locale.ROOT), Math.max(35, playerX - 55), playerY - 14);
-        g.fillText(practice ? "BOT" : SHORT_NAMES[nextOpponent], Math.max(35, botX - 30), botY - 14);
+        g.fillText(practice ? "BOT" : importantMatch ? "RIVAL" : SHORT_NAMES[nextOpponent], Math.max(35, botX - 30), botY - 14);
         g.setFill(Color.web("#FFFFFF")); g.setFont(Font.font("Arial", 14));
         g.fillText("LEYENDA", W / 2 - 32, 55);
+    }
+
+    /** Fondo de tribunas del estadio. Se puede personalizar en este método. */
+    private void drawStadium(GraphicsContext g) {
+        g.setFill(Color.web("#132D49"));
+        g.fillRoundRect(30, 30, W - 60, 205, 14, 14);
+        g.setFill(Color.web("#203F5D"));
+        g.fillRect(30, 55, W - 60, 34);
+        g.fillRect(30, 105, W - 60, 34);
+        g.fillRect(30, 155, W - 60, 34);
+        // Público estilizado: pequeños puntos en filas para dar profundidad a las tribunas.
+        Color[] crowd = {Color.web("#D6E4EE"), Color.web("#E6B95E"), Color.web("#E66C72"),
+                Color.web("#65C6E8"), Color.web("#8BD3A5")};
+        for (int row = 0; row < 4; row++) {
+            double y = 45 + row * 43;
+            for (int col = 0; col < 92; col++) {
+                double x = 43 + col * 10.0;
+                g.setFill(crowd[(col * 3 + row * 7) % crowd.length]);
+                g.fillOval(x, y + ((col % 2) * 3), 4, 7);
+            }
+        }
+        g.setFill(Color.web("#E8F1F7"));
+        g.setFont(Font.font("Arial", 10));
+        g.fillText("LEYENDA STADIUM", W / 2 - 48, 215);
+        g.setFill(Color.web("#0D513B"));
+        g.fillRect(28, 245, W - 56, FLOOR - 245);
+        g.setFill(Color.web("#0F5B40"));
+        for (int i = 0; i < 8; i++) g.fillRect(28 + i * 118, 245, 58, FLOOR - 245);
     }
 
     private void drawPlayer(GraphicsContext g, double x, double y, boolean human) {
         Color shirt = human ? Color.web("#45C8EF") : Color.web("#E74C5A");
         Color skin = Color.web("#E9B88D");
+        double run = (human ? (left || right) : Math.abs(ballX - botX) > 20) ? Math.sin(elapsed * 13) * 8 : 0;
         g.setFill(Color.color(0, 0, 0, 0.25)); g.fillOval(x - 28, FLOOR - 7, 56, 12);
-        g.setFill(skin); g.fillOval(x - 25, y, 50, 50);
+        // Cabeza y torso.
+        g.setFill(skin); g.fillOval(x - 17, y, 34, 34);
         g.setFill(human ? Color.web("#163B61") : Color.web("#292D38"));
-        g.fillOval(x - 26, y - 4, 52, 27);
-        g.setFill(shirt); g.fillRoundRect(x - 27, y + 42, 54, 32, 10, 10);
+        g.fillArc(x - 18, y - 4, 36, 22, 0, 180, javafx.scene.shape.ArcType.ROUND);
+        g.setFill(shirt); g.fillRoundRect(x - 23, y + 31, 46, 35, 9, 9);
         g.setFill(Color.WHITE); g.setFont(Font.font("Arial", 10));
-        g.fillText(human ? String.valueOf(player.getDorsal()) : "10", x - 4, y + 62);
-        g.setStroke(Color.web("#F1D4B5")); g.setLineWidth(8);
-        g.strokeLine(x - 15, y + 70, x - 18, y + 82);
-        g.strokeLine(x + 15, y + 70, x + 18, y + 82);
+        g.fillText(human ? String.valueOf(player.getDorsal()) : "10", x - 4, y + 53);
+        // Piernas articuladas y botines visibles: el disparo se produce desde aquí.
+        g.setStroke(Color.web("#E9B88D")); g.setLineWidth(7);
+        g.strokeLine(x - 12, y + 60, x - 15 - run, y + 70);
+        g.strokeLine(x + 12, y + 60, x + 19 + run, y + 70);
+        g.setStroke(Color.web("#DCEAF4")); g.setLineWidth(6);
+        g.strokeLine(x - 15 - run, y + 70, x - 20 - run, y + 76);
+        g.strokeLine(x + 19 + run, y + 70, x + 24 + run, y + 76);
+        g.setStroke(Color.web("#182638")); g.setLineWidth(7);
+        g.strokeLine(x - 20 - run, y + 76, x - 9 - run, y + 76);
+        g.strokeLine(x + 24 + run, y + 76, x + 35 + run, y + 76);
+    }
+
+    /** Abre la búsqueda de la canción; el volumen se controla desde el reproductor de YouTube. */
+    private void openYoutubeMusic() {
+        try {
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().browse(URI.create("https://www.youtube.com/results?search_query=X+Mil+Noches"));
+            }
+        } catch (Exception ignored) {
+            if (statusLabel != null) statusLabel.setText("No se pudo abrir YouTube en este dispositivo.");
+        }
+    }
+
+    private Image loadBallImage() {
+        try {
+            String source = BALL_IMAGE_URL == null ? "" : BALL_IMAGE_URL.trim();
+            if (source.isEmpty()) {
+                var resource = getClass().getResource("/images/ball-2026.png");
+                return resource == null ? null : new Image(resource.toExternalForm(), true);
+            }
+            return new Image(source, true);
+        } catch (Exception ignored) { return null; }
     }
 
     private BorderPane shell() {
@@ -489,8 +734,11 @@ public final class OneVsOneGame {
     }
 
     private void setScene(BorderPane root) {
-        Scene scene = new Scene(root, 1200, 760);
+        Scene scene = new Scene(root, Math.max(720, stage.getWidth()), Math.max(520, stage.getHeight()));
         scene.getStylesheets().add(css());
+        scene.setOnKeyPressed(e -> {
+            if (e.getCode() == KeyCode.F11) { stage.setFullScreen(!stage.isFullScreen()); e.consume(); }
+        });
         stage.setScene(scene);
         stage.show();
     }

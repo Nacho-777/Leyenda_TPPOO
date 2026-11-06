@@ -183,7 +183,8 @@ public class CompeticionesService {
         boolean campeon = random.nextInt(100) < probabilidad;
         String fase;
         if (campeon) fase = "CAMPEÓN INTERNACIONAL";
-        else if (fuerza >= 95) fase = "SEMIFINAL";
+        else if (fuerza >= 95 && random.nextInt(100) < 45) fase = "FINALISTA";
+        else if (fuerza >= 90) fase = "SEMIFINAL";
         else if (fuerza >= 83) fase = "CUARTOS DE FINAL";
         else if (fuerza >= 70) fase = "OCTAVOS DE FINAL";
         else fase = "FASE DE GRUPOS";

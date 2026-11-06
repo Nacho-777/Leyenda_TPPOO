@@ -5,14 +5,11 @@ import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.collections.FXCollections;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
-import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.input.KeyCode;
+import javafx.scene.Node;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonBar;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.Dialog;
-import javafx.scene.control.ListView;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
@@ -74,8 +71,13 @@ public class MainApp extends Application {
     private Stage stage;
     private Jugador jugadorActual;
     private String clubActual;
-    private String dificultadActual = "NORMAL";
-    private int temporadasPorEtapa = 2;
+    private String dificultadActual = "DIFÍCIL";
+    private int temporadasPorEtapa = 1;
+    private boolean carreraRetirada;
+    private boolean ofertasGeneradasPendientes;
+    private String ultimoPartidoImportante = "Todavía no disputaste un partido destacado.";
+    private String competicionImportanteDisponible;
+    private int temporadaPartidoImportante = 2026;
     private int anioActual = 2026;
     private int edadActual = EDAD_INICIO;
     private int numeroEtapa = 1;
@@ -88,15 +90,17 @@ public class MainApp extends Application {
     private final List<ResultadoCompeticion> historialCompeticiones = new ArrayList<>();
     private List<OfertaTransferencia> ofertasActuales = new ArrayList<>();
     private String ultimoMovimientoMercado = "Todavía no realizaste transferencias.";
+    private String resumenTemporadaPendiente = "";
 
     @Override
     public void start(Stage primaryStage) {
         stage = primaryStage;
         stage.setTitle("LEYENDA | Modo Carrera");
-        stage.setMinWidth(1180);
-        stage.setMinHeight(760);
-        stage.setWidth(1440);
-        stage.setHeight(900);
+        // Arranca maximizada para aprovechar pantallas de laptop; el mínimo permite
+        // seguir usando la app en ventanas más pequeñas con scroll vertical.
+        stage.setMinWidth(720);
+        stage.setMinHeight(520);
+        stage.setMaximized(true);
         showHome();
         stage.show();
     }
@@ -110,7 +114,8 @@ public class MainApp extends Application {
         VBox page = pageContent();
         page.getChildren().add(topBar("CENTRO DE CARRERA", "TEMPORADA " + anioActual));
 
-        HBox hero = new HBox(28);
+        FlowPane hero = new FlowPane(28, 18);
+        hero.setPrefWrapLength(1050);
         hero.getStyleClass().add("hero-panel");
         hero.setPadding(new Insets(36));
         hero.setAlignment(Pos.CENTER_LEFT);
@@ -149,7 +154,9 @@ public class MainApp extends Application {
         art.getChildren().addAll(outer, inner, emblem, season);
         hero.getChildren().addAll(copy, art);
 
-        HBox stats = new HBox(14,
+        FlowPane stats = new FlowPane(14, 14);
+        stats.setPrefWrapLength(1040);
+        stats.getChildren().addAll(
                 metricCard("CLUBES", String.valueOf(clubesService.cantidadClubes()), "Argentina + cinco ligas europeas"),
                 metricCard("LIGAS", "6", "Argentina + cinco europeas"),
                 metricCard("OBJETIVO", "99", "OVR máximo"),
@@ -170,7 +177,9 @@ public class MainApp extends Application {
             clubSection.getChildren().addAll(leagueTitle, clubGrid);
         }
 
-        HBox shortcuts = new HBox(14,
+        FlowPane shortcuts = new FlowPane(14, 14);
+        shortcuts.setPrefWrapLength(1040);
+        shortcuts.getChildren().addAll(
                 shortcutCard("MERCADO DE PASES", "Recibí ofertas y cambiá de club.", "ABRIR MERCADO", this::showTransfers),
                 shortcutCard("COMPETICIONES", "Copas nacionales y torneos continentales según tu país.", "VER COMPETICIONES", this::showCompetitions),
                 shortcutCard("MIS FUTBOLISTAS", "Consultá los jugadores guardados en MySQL.", "VER PLANTEL", this::showSavedPlayers));
@@ -245,9 +254,14 @@ public class MainApp extends Application {
         scroll.getStyleClass().add("page-scroll");
         scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         shell.setCenter(scroll);
-        Scene scene = new Scene(shell, 1400, 900);
+        double width = Math.max(720, stage.getWidth());
+        double height = Math.max(520, stage.getHeight());
+        Scene scene = new Scene(shell, width, height);
         var stylesheet = getClass().getResource(CSS);
         if (stylesheet != null) scene.getStylesheets().add(stylesheet.toExternalForm());
+        scene.setOnKeyPressed(e -> {
+            if (e.getCode() == KeyCode.F11) { stage.setFullScreen(!stage.isFullScreen()); e.consume(); }
+        });
         stage.setScene(scene);
     }
 
@@ -327,31 +341,21 @@ public class MainApp extends Application {
         VBox dataCard = surfaceCard();
         dataCard.getChildren().addAll(
                 sectionHeading("01", "PERFIL DEL FUTBOLISTA", "Nombre, camiseta y puesto dentro del campo."),
-                new HBox(14, field("NOMBRE Y APELLIDO", nombre), field("DORSAL (SE PUEDE REPETIR)", dorsal)),
-                new HBox(14, field("POSICIÓN", posicion), field("LIGA", liga)),
+                new FlowPane(14, 12, field("NOMBRE Y APELLIDO", nombre), field("DORSAL (SE PUEDE REPETIR)", dorsal)),
+                new FlowPane(14, 12, field("POSICIÓN", posicion), field("LIGA", liga)),
                 field("CLUB DE DEBUT", club),
                 clubPreview);
 
-        ToggleGroup modeGroup = new ToggleGroup();
-        ToggleButton hard = modeButton(modeGroup, "DIFÍCIL", "1 temporada por etapa", "24 etapas · cada año cuenta", 1);
-        ToggleButton normal = modeButton(modeGroup, "NORMAL", "2 temporadas por etapa", "12 etapas · ritmo equilibrado", 2);
-        ToggleButton easy = modeButton(modeGroup, "FÁCIL", "4 temporadas por etapa", "6 etapas · progreso rápido", 4);
-        normal.setSelected(true);
         VBox modeCard = surfaceCard();
         modeCard.getChildren().addAll(
-                sectionHeading("02", "ELEGÍ EL MODO DE SIMULACIÓN", "La dificultad define cuántas temporadas avanzan cada vez que continuás."),
-                new HBox(13, hard, normal, easy),
-                label("La carrera comienza a los 16 años y termina a los 40. El crecimiento de OVR se concentra en la etapa joven; el rendimiento y el entrenamiento ayudan a sostener el nivel.", "helper-text"));
+                sectionHeading("02", "MODO DE CARRERA", "La carrera se juega temporada por temporada, con decisiones y consecuencias en cada año."),
+                pill("DIFICULTAD ÚNICA · DIFÍCIL"),
+                label("Sin modos Fácil ni Intermedio. Cada temporada cuenta: rendimiento, entrenamientos, mercado y declive por edad afectan tu camino.", "helper-text"));
 
         Button back = secondaryButton("VOLVER AL INICIO");
         back.setOnAction(e -> showHome());
         Button create = primaryButton("FIRMAR PRIMER CONTRATO  →");
-        create.setOnAction(e -> {
-            ToggleButton selected = (ToggleButton) modeGroup.getSelectedToggle();
-            int seasons = selected == null ? 2 : (Integer) selected.getUserData();
-            String mode = seasons == 1 ? "DIFÍCIL" : seasons == 2 ? "NORMAL" : "FÁCIL";
-            savePlayer(nombre.getText(), dorsal.getText(), posicion.getValue(), club.getValue(), mode, seasons);
-        });
+        create.setOnAction(e -> savePlayer(nombre.getText(), dorsal.getText(), posicion.getValue(), club.getValue(), "DIFÍCIL", 1));
         HBox actions = new HBox(12, back, create);
         actions.setAlignment(Pos.CENTER_RIGHT);
         page.getChildren().addAll(dataCard, modeCard, actions);
@@ -429,6 +433,11 @@ public class MainApp extends Application {
             edadActual = EDAD_INICIO;
             numeroEtapa = 1;
             totalPartidos = totalGoles = totalAsistencias = totalTitulos = totalBalonesOro = 0;
+            carreraRetirada = false;
+            ofertasGeneradasPendientes = false;
+            ofertasActuales.clear();
+            competicionImportanteDisponible = null;
+            ultimoPartidoImportante = "Todavía no disputaste un partido destacado.";
             historialCompeticiones.clear();
             competicionesService.reiniciarCarrera();
             ultimoMovimientoMercado = "Todavía no realizaste transferencias.";
@@ -452,7 +461,7 @@ public class MainApp extends Application {
         jugador.setNombre(nombre);
         jugador.setEdad(16);
         jugador.setOvr(52);
-        jugador.setPrecio(650000.0);
+        jugador.setPrecio(jugador.calcularPrecioMercado());
         jugador.setResistencia(55);
         jugador.setEquipo(club);
         jugador.setDorsal(dorsal);
@@ -514,10 +523,12 @@ public class MainApp extends Application {
         rating.setMinWidth(126);
         hero.getChildren().addAll(clubLogo(clubInfo, 76), kit, identity, rating);
 
-        HBox metrics = new HBox(12,
-                metricCard("EDAD", edadActual + " años", "objetivo: 40"),
+        FlowPane metrics = new FlowPane(12, 12);
+        metrics.setPrefWrapLength(1040);
+        metrics.getChildren().addAll(
+                metricCard("EDAD", edadActual + " años", "retiro voluntario disponible"),
                 metricCard("TEMPORADA", String.valueOf(anioActual), "año en curso"),
-                metricCard("ETAPA", numeroEtapa + " / " + (24 / temporadasPorEtapa), temporadasPorEtapa + " temporada(s)"),
+                metricCard("ETAPA", numeroEtapa + " / 24", "una temporada por etapa"),
                 metricCard("VALOR DE MERCADO", moneda.format(jugadorActual.getPrecio()), "estimación del juego"));
 
         VBox attributes = surfaceCard();
@@ -572,16 +583,21 @@ public class MainApp extends Application {
 
         VBox quick = surfaceCard();
         quick.getChildren().add(sectionHeading("GESTIÓN", "EL PRÓXIMO PASO", "Tu carrera no se juega solamente dentro de la cancha."));
-        HBox quickButtons = new HBox(10,
-                primaryButton("MERCADO DE PASES  ⇄"), secondaryButton("COMPETICIONES  ♜"), secondaryButton("MIS ESTADÍSTICAS  ▤"));
+        FlowPane quickButtons = new FlowPane(10, 10);
+        quickButtons.getChildren().addAll(
+                primaryButton("MERCADO DE PASES  ⇄"), secondaryButton("COMPETICIONES  ♜"), secondaryButton("MIS ESTADÍSTICAS  ▤"),
+                secondaryButton("RETIRARME AHORA  ⚑"));
         ((Button) quickButtons.getChildren().get(0)).setOnAction(e -> showTransfers());
         ((Button) quickButtons.getChildren().get(1)).setOnAction(e -> showCompetitions());
         ((Button) quickButtons.getChildren().get(2)).setOnAction(e -> showCareerSummary());
+        ((Button) quickButtons.getChildren().get(3)).setOnAction(e -> retireCareer());
         quick.getChildren().addAll(quickButtons, label(ultimoMovimientoMercado, "helper-text"));
 
-        HBox mainColumns = new HBox(14, attributes, progression);
-        HBox.setHgrow(attributes, Priority.ALWAYS); HBox.setHgrow(progression, Priority.ALWAYS);
-        attributes.setPrefWidth(520); progression.setPrefWidth(520);
+        FlowPane mainColumns = new FlowPane(14, 14);
+        mainColumns.setPrefWrapLength(1040);
+        attributes.setPrefWidth(500); progression.setPrefWidth(500);
+        attributes.setMinWidth(300); progression.setMinWidth(300);
+        mainColumns.getChildren().addAll(attributes, progression);
 
         double progress = Math.min(1.0, (edadActual - EDAD_INICIO) / (double) (EDAD_RETIRO - EDAD_INICIO));
         VBox progressCard = surfaceCard();
@@ -640,6 +656,13 @@ public class MainApp extends Application {
                 ClubInfo clubDeLaTemporada = clubActualInfo();
                 List<ResultadoCompeticion> copas = competicionesService.simularTemporada(
                         jugadorActual, clubDeLaTemporada, random);
+                String paisDeCompeticion = clubDeLaTemporada == null ? "Argentina" : clubDeLaTemporada.getPais();
+                competicionImportanteDisponible = copas.stream()
+                        .filter(c -> "INTERNACIONAL".equalsIgnoreCase(c.getCategoria()))
+                        .map(ResultadoCompeticion::getNombre)
+                        .filter(nombre -> esCompeticionDeRegion(nombre, paisDeCompeticion))
+                        .findFirst().orElse(null);
+                if (competicionImportanteDisponible != null) temporadaPartidoImportante = temporadaFinalizada;
                 resultado.setCompeticiones(copas);
                 historialCompeticiones.addAll(copas);
 
@@ -662,8 +685,7 @@ public class MainApp extends Application {
                 jugadorActual.setEquipo(clubActual);
                 jugadorService.actualizarJugador(jugadorActual);
 
-                // Se abre una ventana por temporada, no por etapa: en NORMAL y FÁCIL
-                // el mercado aparece también entre los años simulados dentro de la misma etapa.
+                // Las ofertas quedan guardadas para consultarlas en la página de mercado.
                 if (edadActual < EDAD_RETIRO) {
                     String movimiento = mostrarMercadoFinTemporada(temporadaFinalizada);
                     if (movimiento != null && !movimiento.isBlank()) aging.add(movimiento);
@@ -674,7 +696,9 @@ public class MainApp extends Application {
             jugadorService.actualizarJugador(jugadorActual);
             numeroEtapa++;
             String growthMessage = aging.isEmpty() ? "El progreso dependerá del próximo rendimiento." : String.join("  ·  ", aging);
-            showStageResults(resultados, etapaSimulada, trainingMessage, eventMessage + " " + growthMessage);
+            resumenTemporadaPendiente = "Temporada " + etapaSimulada + " completada. " + trainingMessage + " " + eventMessage + " " + growthMessage;
+            if (ofertasGeneradasPendientes && !ofertasActuales.isEmpty()) showTransfers();
+            else showStageResults(resultados, etapaSimulada, trainingMessage, eventMessage + " " + growthMessage);
         } catch (Exception ex) {
             showAlert(Alert.AlertType.ERROR, "No se pudo simular la etapa", safeMessage(ex));
         }
@@ -685,8 +709,8 @@ public class MainApp extends Application {
         switch (evento) {
             case 0 -> {
                 jugadorActual.setVelocidad(Math.min(99, jugadorActual.getVelocidad() + 2));
-                if (edadActual < 30) jugadorActual.setOvr(Math.min(99, jugadorActual.getOvr() + 1));
-                return "🌟 Oportunidad: una actuación llamó la atención del cuerpo técnico. +2 velocidad" + (edadActual < 30 ? " y +1 OVR." : "." );
+                if (edadActual < 30) jugadorActual.setOvr(Math.min(99, jugadorActual.getOvr() + 2));
+                return "🌟 Oportunidad: una actuación llamó la atención del cuerpo técnico. +2 velocidad" + (edadActual < 30 ? " y +2 OVR." : "." );
             }
             case 1 -> {
                 int perdida = random.nextInt(3) + 2;
@@ -707,9 +731,9 @@ public class MainApp extends Application {
                 return "🔋 Semana de recuperación: +4 resistencia.";
             }
             case 5 -> {
-                if (edadActual < 30) jugadorActual.setOvr(Math.min(99, jugadorActual.getOvr() + 1));
+                if (edadActual < 30) jugadorActual.setOvr(Math.min(99, jugadorActual.getOvr() + 2));
                 jugadorActual.setPase(Math.min(99, jugadorActual.getPase() + 1));
-                return edadActual < 30 ? "📈 Racha de confianza: +1 pase y +1 OVR." : "🧠 Experiencia: +1 pase.";
+                return edadActual < 30 ? "📈 Racha de confianza: +1 pase y +2 OVR." : "🧠 Experiencia: +1 pase.";
             }
             case 6 -> {
                 jugadorActual.setRegate(Math.min(99, jugadorActual.getRegate() + 2));
@@ -732,12 +756,16 @@ public class MainApp extends Application {
 
     private void showTransfers() {
         if (jugadorActual == null) { showAlert(Alert.AlertType.INFORMATION, "Sin carrera", "Creá un futbolista antes de entrar al mercado."); showCreatePlayer(); return; }
-        ofertasActuales = mercadoService.generarOfertas(jugadorActual, clubActual, random);
+        if (ofertasActuales.isEmpty()) {
+            ofertasActuales = mercadoService.generarOfertas(jugadorActual, clubActual, random);
+        }
         BorderPane shell = createShell("MERCADO");
         VBox page = pageContent();
-        page.getChildren().add(topBar("MERCADO DE PASES", "VENTANA DE TRANSFERENCIAS"));
-        page.getChildren().addAll(label("TU REPRESENTANTE", "eyebrow"), label("Hay clubes preguntando por vos.", "page-title"),
-                label("Compará el proyecto deportivo, la duración del contrato y el valor de cada oferta.", "page-subtitle"));
+        page.getChildren().add(topBar("MERCADO DE PASES", "NEGOCIACIONES DE TEMPORADA"));
+        page.getChildren().addAll(label(ofertasGeneradasPendientes ? "VENTANA DE FICHAJES · PAUSA DE TEMPORADA" : "TU REPRESENTANTE", "eyebrow"),
+                label(ofertasGeneradasPendientes ? "El mercado interrumpe tu temporada." : "Hay clubes preguntando por vos.", "page-title"),
+                label("Los clubes que aparecen se ajustan a tu OVR, atributos, edad y rendimiento. Compará el proyecto deportivo, el salario y el valor del fichaje.", "page-subtitle"));
+        if (!resumenTemporadaPendiente.isBlank()) page.getChildren().add(label(resumenTemporadaPendiente, "event-banner"));
 
         HBox current = new HBox(16);
         current.getStyleClass().add("market-current");
@@ -752,12 +780,18 @@ public class MainApp extends Application {
         for (OfertaTransferencia offer : ofertasActuales) offersGrid.getChildren().add(offerCard(offer));
         VBox note = surfaceCard();
         note.getChildren().addAll(sectionHeading("NEGOCIACIÓN", "ÚLTIMO MOVIMIENTO", ultimoMovimientoMercado),
-                label("Al terminar cada temporada recibís una nueva ventana de pases. Los dorsales no son exclusivos: varios futbolistas pueden usar el mismo número.", "helper-text"));
+                label("Al terminar cada temporada recibís nuevas ofertas de clubes. Los dorsales no son exclusivos: varios futbolistas pueden usar el mismo número.", "helper-text"));
         Button refresh = secondaryButton("BUSCAR NUEVAS OFERTAS");
-        refresh.setOnAction(e -> showTransfers());
-        Button back = primaryButton("VOLVER A MI CARRERA");
+        refresh.setOnAction(e -> {
+            ofertasActuales = mercadoService.generarOfertas(jugadorActual, clubActual, random);
+            ofertasGeneradasPendientes = false;
+            showTransfers();
+        });
+        Button continueButton = primaryButton("CONTINUAR SIN FICHAR  →");
+        continueButton.setOnAction(e -> { ofertasGeneradasPendientes = false; resumenTemporadaPendiente = ""; showDashboard(); });
+        Button back = secondaryButton("VOLVER A MI CARRERA");
         back.setOnAction(e -> showDashboard());
-        HBox actions = new HBox(12, refresh, back);
+        HBox actions = new HBox(12, refresh, continueButton, back);
         page.getChildren().addAll(current, label("OFERTAS RECIBIDAS", "section-title"), offersGrid, note, actions);
         setPage(shell, page);
     }
@@ -793,7 +827,10 @@ public class MainApp extends Application {
     private void aceptarOferta(OfertaTransferencia oferta) {
         try {
             String mensaje = registrarTransferencia(oferta, anioActual);
-            showAlert(Alert.AlertType.INFORMATION, "¡Fichaje confirmado!", mensaje);
+            ofertasGeneradasPendientes = false;
+            resumenTemporadaPendiente = "";
+            ofertasActuales = new ArrayList<>();
+            ultimoMovimientoMercado = mensaje;
             showDashboard();
         } catch (Exception ex) {
             showAlert(Alert.AlertType.ERROR, "No se pudo completar el fichaje", safeMessage(ex));
@@ -813,66 +850,16 @@ public class MainApp extends Application {
                 + " · Salario anual: " + moneda.format(oferta.getSalarioAnual()) + ".";
     }
 
-    /** Se abre automáticamente al cerrar cada temporada (incluso dentro de una etapa de 2 o 4 años). */
+    /** Genera ofertas al cerrar la temporada; se consultan en la página Mercado, sin ventanas emergentes. */
     private String mostrarMercadoFinTemporada(int temporada) throws Exception {
         ofertasActuales = mercadoService.generarOfertas(jugadorActual, clubActual, random);
+        ofertasGeneradasPendientes = !ofertasActuales.isEmpty();
         if (ofertasActuales.isEmpty()) {
             ultimoMovimientoMercado = "Temporada " + temporada + ": no llegaron ofertas. Seguís en " + clubActual + ".";
-            return ultimoMovimientoMercado;
+        } else {
+            ultimoMovimientoMercado = "Temporada " + temporada + ": recibiste " + ofertasActuales.size()
+                    + " oferta(s). Revisalas desde Mercado de pases cuando quieras.";
         }
-
-        Dialog<OfertaTransferencia> dialog = new Dialog<>();
-        dialog.initOwner(stage);
-        dialog.setTitle("LEYENDA · MERCADO DE PASES");
-        dialog.setHeaderText("Terminó la temporada " + temporada + " · ¿Cuál es tu próximo paso?");
-        dialog.setResizable(true);
-        dialog.getDialogPane().getStyleClass().add("season-market-dialog");
-
-        ListView<OfertaTransferencia> lista = new ListView<>(FXCollections.observableArrayList(ofertasActuales));
-        lista.setPrefSize(560, 285);
-        lista.getStyleClass().add("market-offer-list");
-        lista.setCellFactory(view -> new ListCell<>() {
-            @Override
-            protected void updateItem(OfertaTransferencia oferta, boolean empty) {
-                super.updateItem(oferta, empty);
-                if (empty || oferta == null) {
-                    setText(null);
-                    setGraphic(null);
-                } else {
-                    ClubInfo destino = oferta.getClub();
-                    setText(destino.getNombre() + "  ·  " + destino.getPais() + " / " + destino.getCompeticion()
-                            + "\nReputación " + destino.getReputacion() + "/5  ·  Valor "
-                            + moneda.format(oferta.getValorMercado()) + "  ·  Contrato "
-                            + oferta.getAnosContrato() + " temporadas");
-                    setGraphic(clubLogo(destino, 38));
-                    setContentDisplay(ContentDisplay.LEFT);
-                }
-            }
-        });
-        VBox contenido = new VBox(10,
-                label("TU CLUB ACTUAL: " + clubActual, "club-card-title"),
-                label("Elegí una oferta o quedate. El cambio se guarda automáticamente en la base de datos.", "helper-text"),
-                lista);
-        contenido.setPadding(new Insets(8, 2, 4, 2));
-        dialog.getDialogPane().setContent(contenido);
-
-        ButtonType aceptar = new ButtonType("ACEPTAR FICHAJE", ButtonBar.ButtonData.OK_DONE);
-        ButtonType quedarse = new ButtonType("QUEDARME EN " + clubActual.toUpperCase(Locale.ROOT), ButtonBar.ButtonData.CANCEL_CLOSE);
-        dialog.getDialogPane().getButtonTypes().setAll(aceptar, quedarse);
-        dialog.setResultConverter(tipo -> tipo == aceptar ? lista.getSelectionModel().getSelectedItem() : null);
-        Node botonAceptar = dialog.getDialogPane().lookupButton(aceptar);
-        botonAceptar.setDisable(true);
-        lista.getSelectionModel().selectedItemProperty().addListener((obs, anterior, seleccionada) ->
-                botonAceptar.setDisable(seleccionada == null));
-        if (getClass().getResource(CSS) != null) {
-            dialog.getDialogPane().getStylesheets().add(getClass().getResource(CSS).toExternalForm());
-        }
-
-        OfertaTransferencia seleccion = dialog.showAndWait().orElse(null);
-        if (seleccion != null) {
-            return registrarTransferencia(seleccion, temporada);
-        }
-        ultimoMovimientoMercado = "Temporada " + temporada + ": decidiste quedarte en " + clubActual + ".";
         return ultimoMovimientoMercado;
     }
 
@@ -880,76 +867,64 @@ public class MainApp extends Application {
     // COMPETICIONES NACIONALES E INTERNACIONALES
     // ---------------------------------------------------------------------
 
+    private boolean esCompeticionDeRegion(String nombre, String pais) {
+        boolean argentina = "Argentina".equalsIgnoreCase(pais);
+        if (argentina) return nombre.equalsIgnoreCase("Copa Libertadores") || nombre.equalsIgnoreCase("Copa Sudamericana");
+        return nombre.equalsIgnoreCase("UEFA Champions League")
+                || nombre.equalsIgnoreCase("UEFA Europa League")
+                || nombre.equalsIgnoreCase("UEFA Conference League");
+    }
+
     private void showCompetitions() {
         if (jugadorActual == null) { showAlert(Alert.AlertType.INFORMATION, "Sin carrera", "Creá un futbolista para consultar sus competiciones."); showCreatePlayer(); return; }
         BorderPane shell = createShell("COMPETICIONES");
         VBox page = pageContent();
-        page.getChildren().add(topBar("CALENDARIO DE COMPETICIONES", "TEMPORADA " + anioActual));
-        page.getChildren().addAll(label("EL SUEÑO DE TODO FUTBOLISTA", "eyebrow"),
-                label("Competí por todo.", "page-title"),
-                label("Los torneos se resuelven al simular cada temporada. La clasificación internacional depende del nivel y la reputación del club.", "page-subtitle"));
+        page.getChildren().add(topBar("MIS COMPETICIONES", "TEMPORADA " + anioActual));
+        page.getChildren().addAll(label("SOLO TUS TORNEOS", "eyebrow"),
+                label("Tu calendario real.", "page-title"),
+                label("Acá aparecen únicamente las competiciones que tu club disputó según el país donde juega y la clasificación obtenida. No se muestran copas de otras regiones.", "page-subtitle"));
 
-        ClubInfo clubInfoActual = clubActualInfo();
-        String paisActual = clubInfoActual.getPais();
-        VBox national = surfaceCard();
-        national.getChildren().add(sectionHeading(paisActual.toUpperCase(Locale.ROOT),
-                "COMPETICIONES NACIONALES", "Calendario adaptado a la liga del club donde jugás actualmente."));
-        List<String[]> nacionales = switch (paisActual) {
-            case "España" -> List.of(
-                    new String[]{"LaLiga", "Liga de primera división"},
-                    new String[]{"Copa del Rey", "Copa nacional por eliminación directa"},
-                    new String[]{"Supercopa de España", "Competición entre los mejores de la temporada"});
-            case "Inglaterra" -> List.of(
-                    new String[]{"Premier League", "Liga de primera división"},
-                    new String[]{"FA Cup", "Copa nacional histórica"},
-                    new String[]{"EFL Cup", "Copa de la liga inglesa"},
-                    new String[]{"FA Community Shield", "Desafío entre campeones"});
-            case "Italia" -> List.of(
-                    new String[]{"Serie A", "Liga de primera división"},
-                    new String[]{"Coppa Italia", "Copa nacional"},
-                    new String[]{"Supercoppa Italiana", "Supercopa nacional"});
-            case "Francia" -> List.of(
-                    new String[]{"Ligue 1", "Liga de primera división"},
-                    new String[]{"Coupe de France", "Copa nacional"},
-                    new String[]{"Trophée des Champions", "Supercopa francesa"});
-            case "Portugal" -> List.of(
-                    new String[]{"Liga Portugal", "Liga de primera división"},
-                    new String[]{"Taça de Portugal", "Copa nacional"},
-                    new String[]{"Taça da Liga", "Copa de la liga"},
-                    new String[]{"Supertaça Cândido de Oliveira", "Supercopa portuguesa"});
-            default -> List.of(
-                    new String[]{"Torneo Apertura", "Liga · Torneo de primera mitad de año"},
-                    new String[]{"Torneo Clausura", "Liga · Torneo de segunda mitad de año"},
-                    new String[]{"Copa Argentina", "Copa nacional · eliminación directa"},
-                    new String[]{"Campeón de Liga", "Tabla general anual"},
-                    new String[]{"Trofeo de Campeones", "Enfrenta a campeones del Apertura y Clausura"},
-                    new String[]{"Supercopa Argentina", "Campeones nacionales"},
-                    new String[]{"Supercopa Internacional", "Título entre campeones de la temporada"},
-                    new String[]{"Recopa de Campeones", "Reúne a ganadores de copas nacionales e internacionales"});
-        };
-        for (String[] torneo : nacionales) national.getChildren().add(competitionTile(torneo[0], torneo[1], "NACIONAL"));
-
-        VBox international = surfaceCard();
-        boolean argentina = "Argentina".equals(paisActual);
-        international.getChildren().add(sectionHeading(argentina ? "CONMEBOL" : "UEFA",
-                "COMPETICIONES INTERNACIONALES", "La clasificación depende del OVR del futbolista y la reputación del club."));
-        if (argentina) {
-            international.getChildren().addAll(
-                    competitionTile("Copa Libertadores", "El máximo objetivo continental de Sudamérica", "INTERNACIONAL"),
-                    competitionTile("Copa Sudamericana", "La otra gran copa de clubes de América", "INTERNACIONAL"),
-                    competitionTile("Recopa Sudamericana", "Entre los campeones de Libertadores y Sudamericana", "INTERNACIONAL"));
-        } else {
-            international.getChildren().addAll(
-                    competitionTile("UEFA Champions League", "La máxima competición europea de clubes", "INTERNACIONAL"),
-                    competitionTile("UEFA Europa League", "El segundo torneo continental", "INTERNACIONAL"),
-                    competitionTile("UEFA Conference League", "Una oportunidad internacional para más clubes", "INTERNACIONAL"),
-                    competitionTile("UEFA Super Cup", "Entre campeones de Champions y Europa League", "INTERNACIONAL"));
+        if (competicionImportanteDisponible != null) {
+            String nombreCopa = competicionImportanteDisponible;
+            ResultadoCompeticion decisiva = historialCompeticiones.stream()
+                    .filter(c -> nombreCopa.equalsIgnoreCase(c.getNombre())).reduce((a, b) -> b).orElse(null);
+            String faseDecisiva = decisiva == null ? "" : decisiva.getFase().toUpperCase(Locale.ROOT);
+            boolean esFinal = faseDecisiva.startsWith("FINALISTA") || faseDecisiva.startsWith("CAMPEÓN");
+            VBox card = surfaceCard();
+            card.getChildren().addAll(label(esFinal ? "FINAL · PARTIDO DECISIVO" : "PARTIDO IMPORTANTE DISPONIBLE", "eyebrow"),
+                    label(nombreCopa + " · " + clubActual, "club-card-title"),
+                    label("Temporada " + temporadaPartidoImportante + " · 90 segundos · dificultad Leyenda. Antes de empezar vas a ver exactamente qué competición estás jugando.", "helper-text"),
+                    label(ultimoPartidoImportante, "event-banner"));
+            Button playImportant = primaryButton("JUGAR PARTIDO DECISIVO 1 VS 1  ⚽");
+            String title = nombreCopa.toUpperCase(Locale.ROOT) + (esFinal ? " · FINAL" : " · PARTIDO DECISIVO") + " · TEMPORADA " + temporadaPartidoImportante;
+            playImportant.setOnAction(e -> OneVsOneGame.startImportantMatch(stage, jugadorActual, clubActual,
+                    title, won -> {
+                        totalPartidos++;
+                        String faseFinal = esFinal ? (won ? "CAMPEÓN · FINAL GANADA" : "SUBCAMPEÓN · FINAL PERDIDA")
+                                : (won ? "VICTORIA · PARTIDO DECISIVO" : "ELIMINADO · PARTIDO DECISIVO PERDIDO");
+                        ultimoPartidoImportante = esFinal
+                                ? (won ? "¡Felicidades! ¡Sos campeón de " + nombreCopa + "!" : "¡Sos subcampeón de " + nombreCopa + "! En otro año será.")
+                                : (won ? "¡Victoria en el partido decisivo de " + nombreCopa + "!" : "Derrota en el partido decisivo de " + nombreCopa + ". La carrera continúa.");
+                        for (int i = historialCompeticiones.size() - 1; i >= 0; i--) {
+                            ResultadoCompeticion actual = historialCompeticiones.get(i);
+                            if (nombreCopa.equalsIgnoreCase(actual.getNombre())) {
+                                if (won && !actual.isCampeon()) totalTitulos++;
+                                if (!won && actual.isCampeon()) totalTitulos = Math.max(0, totalTitulos - 1);
+                                historialCompeticiones.set(i, new ResultadoCompeticion(nombreCopa,
+                                        actual.getCategoria(), faseFinal, won, ultimoPartidoImportante));
+                                break;
+                            }
+                        }
+                        competicionImportanteDisponible = null;
+                    }, this::showCompetitions));
+            card.getChildren().add(playImportant);
+            page.getChildren().add(card);
         }
 
         VBox history = surfaceCard();
-        history.getChildren().add(sectionHeading("HISTORIAL", "TUS RESULTADOS", "Se muestran las competiciones simuladas durante esta carrera."));
+        history.getChildren().add(sectionHeading("HISTORIAL", "TORNEOS DE TU CLUB", "Resultados reales de las temporadas simuladas en tu carrera."));
         if (historialCompeticiones.isEmpty()) {
-            history.getChildren().add(label("Todavía no jugaste una temporada. Avanzá desde el panel de carrera para generar resultados.", "helper-text"));
+            history.getChildren().add(label("Todavía no hay competiciones registradas. Avanzá una temporada para conocer tu calendario.", "helper-text"));
         } else {
             for (int i = historialCompeticiones.size() - 1; i >= 0; i--) {
                 ResultadoCompeticion result = historialCompeticiones.get(i);
@@ -958,7 +933,7 @@ public class MainApp extends Application {
         }
         Button back = primaryButton("VOLVER A MI CARRERA");
         back.setOnAction(e -> showDashboard());
-        page.getChildren().addAll(new HBox(14, national, international), history, back);
+        page.getChildren().addAll(history, back);
         setPage(shell, page);
     }
 
@@ -994,7 +969,9 @@ public class MainApp extends Application {
 
         FlowPane seasonCards = new FlowPane(14, 14);
         for (ResultadoTemporada result : resultados) seasonCards.getChildren().add(seasonCard(result));
-        HBox summary = new HBox(12,
+        FlowPane summary = new FlowPane(12, 12);
+        summary.setPrefWrapLength(1000);
+        summary.getChildren().addAll(
                 metricCard("PARTIDOS", String.valueOf(sumPartidos(resultados)), "en esta etapa"),
                 metricCard("GOLES", String.valueOf(sumGoles(resultados)), "en esta etapa"),
                 metricCard("ASISTENCIAS", String.valueOf(sumAsistencias(resultados)), "en esta etapa"),
@@ -1008,10 +985,16 @@ public class MainApp extends Application {
             continueButton = primaryButton("VOLVER AL CENTRO DE CARRERA  →");
             continueButton.setOnAction(e -> showDashboard());
         }
-        Button market = secondaryButton("REVISAR OFERTAS"); market.setOnAction(e -> showTransfers());
+        Button market = secondaryButton(ofertasGeneradasPendientes ? "VER OFERTAS RECIBIDAS  ⇄" : "ABRIR MERCADO  ⇄"); market.setOnAction(e -> showTransfers());
         Button home = secondaryButton("MENÚ PRINCIPAL"); home.setOnAction(e -> showHome());
+        FlowPane actions = new FlowPane(10, 10, home, market, continueButton);
+        if (competicionImportanteDisponible != null) {
+            Button decisive = primaryButton("PARTIDO DECISIVO DE " + competicionImportanteDisponible.toUpperCase(Locale.ROOT) + "  ⚽");
+            decisive.setOnAction(e -> showCompetitions());
+            actions.getChildren().add(decisive);
+        }
         page.getChildren().addAll(label("TEMPORADAS Y COMPETICIONES", "section-title"), seasonCards,
-                label("RENDIMIENTO DE LA ETAPA", "section-title"), summary, new HBox(10, home, market, continueButton));
+                label("RENDIMIENTO DE LA ETAPA", "section-title"), summary, actions);
         setPage(shell, page);
     }
 
@@ -1042,15 +1025,23 @@ public class MainApp extends Application {
     private int sumGoles(List<ResultadoTemporada> results) { return results.stream().mapToInt(ResultadoTemporada::getGoles).sum(); }
     private int sumAsistencias(List<ResultadoTemporada> results) { return results.stream().mapToInt(ResultadoTemporada::getAsistencias).sum(); }
 
+    private void retireCareer() {
+        if (jugadorActual == null) return;
+        carreraRetirada = true;
+        showCareerSummary();
+    }
+
     private void showCareerSummary() {
         if (jugadorActual == null) { showHome(); return; }
         BorderPane shell = createShell("CARRERA");
         VBox page = pageContent();
-        page.getChildren().add(topBar("CIERRE DE CARRERA", "RETIRO · " + edadActual + " AÑOS"));
+        page.getChildren().add(topBar("CIERRE DE CARRERA", (carreraRetirada ? "RETIRO VOLUNTARIO" : "RETIRO") + " · " + edadActual + " AÑOS"));
         page.getChildren().addAll(label("UNA HISTORIA PARA RECORDAR", "eyebrow"),
-                label("Tu nombre queda en la historia.", "page-title"),
+                label(carreraRetirada ? "Elegiste cerrar tu carrera." : "Tu nombre queda en la historia.", "page-title"),
                 label(jugadorActual.getNombre() + " · " + jugadorActual.getPosicion() + " · " + clubActual, "page-subtitle"));
-        HBox totals = new HBox(12,
+        FlowPane totals = new FlowPane(12, 12);
+        totals.setPrefWrapLength(1000);
+        totals.getChildren().addAll(
                 metricCard("PARTIDOS", String.valueOf(totalPartidos), "jugados"),
                 metricCard("GOLES", String.valueOf(totalGoles), "marcados"),
                 metricCard("ASISTENCIAS", String.valueOf(totalAsistencias), "generadas"),

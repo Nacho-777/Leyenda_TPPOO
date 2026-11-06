@@ -60,11 +60,35 @@ public abstract class Jugador implements Entrenable {
     public String getNombre() { return nombre; }
     public void setNombre(String nombre) { this.nombre = nombre; }
     public int getEdad() { return edad; }
-    public void setEdad(int edad) { this.edad = edad; }
+    public void setEdad(int edad) {
+        this.edad = edad;
+        if (precio > 0) actualizarPrecioSegunOVR();
+    }
     public int getOvr() { return ovr; }
-    public void setOvr(int ovr) { this.ovr = ovr; }
+    public void setOvr(int ovr) {
+        this.ovr = ovr;
+        if (precio > 0) actualizarPrecioSegunOVR();
+    }
     public double getPrecio() { return precio; }
     public void setPrecio(double precio) { this.precio = precio; }
+
+    /**
+     * Estimación de mercado vinculada al OVR: 52 OVR equivale a $650.000.
+     * La progresión es exponencial para que los jugadores de élite valgan más,
+     * con un ajuste por edad para reflejar el valor de reventa.
+     */
+    public double calcularPrecioMercado() {
+        double factorEdad;
+        if (edad <= 27) factorEdad = 1.0;
+        else if (edad <= 30) factorEdad = 1.0 - (edad - 27) * 0.07;
+        else if (edad <= 34) factorEdad = 0.79 - (edad - 30) * 0.075;
+        else factorEdad = Math.max(0.25, 0.49 - (edad - 34) * 0.035);
+        double valor = 650_000.0 * Math.pow(1.09, ovr - 52) * factorEdad;
+        return Math.max(50_000.0, Math.round(valor / 10_000.0) * 10_000.0);
+    }
+
+    /** Actualiza el valor estimado sin impedir que el mercado ofrezca otra cifra. */
+    public void actualizarPrecioSegunOVR() { this.precio = calcularPrecioMercado(); }
     public int getResistencia() { return resistencia; }
     public void setResistencia(int resistencia) { this.resistencia = resistencia; }
     public String getEquipo() { return equipo; }

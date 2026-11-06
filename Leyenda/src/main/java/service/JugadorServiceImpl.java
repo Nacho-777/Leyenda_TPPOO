@@ -203,11 +203,13 @@ public class JugadorServiceImpl implements JugadorService {
         }
 
         String mensaje;
-        if (jugador.getEdad() < 30 && jugador.getOvr() < 99) {
-            jugador.setOvr(Math.min(99, jugador.getOvr() + 1));
-            mensaje = "Entrenamiento de " + enfoque + ": atributos principales mejorados y +1 OVR.";
+        if (jugador.getEdad() < 30) {
+            int anterior = jugador.getOvr();
+            recalcularOvrSegunAtributos(jugador);
+            mensaje = "Entrenamiento de " + enfoque + ": mejoraron tus atributos principales. OVR "
+                    + anterior + " → " + jugador.getOvr() + " según tus estadísticas reales.";
         } else {
-            mensaje = "Entrenamiento de " + enfoque + ": mejoraron tus atributos. El OVR ya está en etapa de declive por edad.";
+            mensaje = "Entrenamiento de " + enfoque + ": mejoraron tus atributos, pero por edad el OVR no puede subir.";
         }
         if (jugador.getId() > 0) actualizarJugador(jugador);
         return mensaje;
@@ -227,17 +229,66 @@ public class JugadorServiceImpl implements JugadorService {
         int produccion = resultado.getGoles() + resultado.getAsistencias();
         boolean campeonCompeticion = resultado.getCompeticiones().stream().anyMatch(model.ResultadoCompeticion::isCampeon);
         if (resultado.isBalonOro()) {
+            bonus = 3;
+            motivo = "Balón de Oro: +3 OVR.";
+        } else if (resultado.isCampeon() || campeonCompeticion || produccion >= 18) {
             bonus = 2;
-            motivo = "Balón de Oro: +2 OVR.";
-        } else if (resultado.isCampeon() || campeonCompeticion || produccion >= 18 || resultado.getPartidos() >= 43) {
+            motivo = (resultado.isCampeon() || campeonCompeticion) ? "Temporada con título: +2 OVR." : "Rendimiento destacado: +2 OVR.";
+        } else if (resultado.getPartidos() >= 43) {
             bonus = 1;
-            motivo = (resultado.isCampeon() || campeonCompeticion) ? "Temporada con título: +1 OVR." : "Rendimiento destacado: +1 OVR.";
+            motivo = "Regularidad durante toda la temporada: +1 OVR.";
         }
         if (bonus == 0 || jugador.getOvr() >= 99) return "";
-        int aplicado = Math.min(bonus, 99 - jugador.getOvr());
-        jugador.setOvr(jugador.getOvr() + aplicado);
+        int aplicado = Math.min(bonus, 3);
+        aplicarBonusPorPosicion(jugador, aplicado);
+        recalcularOvrSegunAtributos(jugador);
         if (jugador.getId() > 0) actualizarJugador(jugador);
         return motivo;
+    }
+
+    /** OVR calculado con los atributos importantes de cada posición; evita valoraciones infladas. */
+    private void recalcularOvrSegunAtributos(Jugador j) {
+        double score;
+        if (j instanceof Arquero a) {
+            score = a.getReflejos() * .30 + a.getAtajadas() * .30 + a.getSalida() * .18
+                    + a.getJuegoConPies() * .10 + j.getResistencia() * .07 + j.getPase() * .05;
+        } else if (j instanceof Defensa d) {
+            score = j.getMarcaje() * .20 + j.getEntradas() * .20 + d.getCabezazo() * .12
+                    + j.getFuerza() * .13 + j.getVelocidad() * .10 + j.getPase() * .08
+                    + j.getControl() * .07 + j.getResistencia() * .10;
+        } else if (j instanceof Delantero d) {
+            score = j.getRemate() * .22 + j.getDefinicion() * .20 + d.getCabezazo() * .10
+                    + j.getVelocidad() * .14 + j.getRegate() * .14 + j.getControl() * .08
+                    + j.getFuerza() * .07 + j.getResistencia() * .05;
+        } else if (j instanceof Mediocampista m) {
+            score = j.getPase() * .20 + m.getVision() * .18 + j.getControl() * .16
+                    + j.getRegate() * .12 + m.getRecuperacion() * .12 + j.getResistencia() * .08
+                    + j.getMarcaje() * .07 + j.getVelocidad() * .07;
+        } else {
+            score = (j.getVelocidad() + j.getRemate() + j.getPase() + j.getRegate()
+                    + j.getFuerza() + j.getControl()) / 6.0;
+        }
+        j.setOvr(Math.max(1, Math.min(99, (int)Math.round(score))));
+        j.actualizarPrecioSegunOVR();
+    }
+
+    private void aplicarBonusPorPosicion(Jugador j, int puntos) {
+        if (j instanceof Arquero a) {
+            a.setReflejos(mejorar(a.getReflejos(), puntos));
+            a.setAtajadas(mejorar(a.getAtajadas(), puntos));
+        } else if (j instanceof Defensa d) {
+            j.setMarcaje(mejorar(j.getMarcaje(), puntos));
+            j.setEntradas(mejorar(j.getEntradas(), puntos));
+            d.setCabezazo(mejorar(d.getCabezazo(), puntos));
+        } else if (j instanceof Delantero d) {
+            j.setRemate(mejorar(j.getRemate(), puntos));
+            j.setDefinicion(mejorar(j.getDefinicion(), puntos));
+            d.setCabezazo(mejorar(d.getCabezazo(), Math.max(1, puntos - 1)));
+        } else if (j instanceof Mediocampista m) {
+            j.setPase(mejorar(j.getPase(), puntos));
+            m.setVision(mejorar(m.getVision(), puntos));
+            j.setControl(mejorar(j.getControl(), Math.max(1, puntos - 1)));
+        }
     }
 
     /** Aplica envejecimiento anual. Desde los 30 el OVR nunca aumenta y cae según edad y rendimiento. */
